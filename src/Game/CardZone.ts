@@ -1,3 +1,4 @@
+import Util from "../Util";
 import Card, { CardId } from "./Card";
 import { CardMove } from "./GameChange";
 
@@ -44,6 +45,9 @@ class CardZone {
     this.cards = _cards;
   }
 
+  public toString() {
+    return Util.CardArrToString(this.GetCards());
+  }
   public GetCards() {
     return this.cards;
   }

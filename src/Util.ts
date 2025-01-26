@@ -1,3 +1,5 @@
+import Card from "./Game/Card";
+
 export default class Util {
   static cantorPair(x: number, y: number) {
     return ((x + y) * (x + y + 1)) / 2 + y;
@@ -25,5 +27,9 @@ export default class Util {
 
     helper(0, []);
     return results;
+  }
+
+  static CardArrToString(arr: Card[]) {
+    return arr.map((c) => c.toString()).join(", ");
   }
 }

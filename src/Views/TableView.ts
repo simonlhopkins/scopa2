@@ -1,4 +1,5 @@
 import { CardZoneID, ZonePosition } from "../Game/CardZone";
+import CardView from "./CardView";
 import ICardZoneView from "./ICardZoneView";
 
 class TableView extends Phaser.GameObjects.Container implements ICardZoneView {
@@ -20,25 +21,24 @@ class TableView extends Phaser.GameObjects.Container implements ICardZoneView {
       .setStrokeStyle(5, 0xff0000);
     this.add(debugRect);
   }
-  OnCardAdded(cardID: string) {}
-  GetCardPosition(cardID: string) {
-    //use slotmap
+  GetPosition(): Phaser.Math.Vector2 {
+    return new Phaser.Math.Vector2(this.x, this.y);
+  }
+  AddCardView(cardView: CardView): void {
     let spotNum = 0;
     while (this.slopMap.has(spotNum)) {
       spotNum++;
     }
-    this.slopMap.set(spotNum, cardID);
-    const targetX = this.x + (spotNum % 2) * 100;
-    const targetY = this.y + Math.floor(spotNum / 2) * 60;
-    return new Phaser.Math.Vector2(targetX, targetY);
-  }
-  GetPosition() {
-    return new Phaser.Math.Vector2(this.x, this.y);
-  }
+    this.slopMap.set(spotNum, cardView.card.id());
 
-  OnCardRemoved(cardId: string): void {
+    const offsetX = (spotNum % 2) * 150;
+    const offsetY = Math.floor(spotNum / 2) * 60;
+    cardView.SetTargetPosition(this.x + offsetX, this.y + offsetY);
+    cardView.setDepth(spotNum);
+  }
+  RemoveCardView(cardView: CardView): void {
     for (let [key, value] of this.slopMap) {
-      if (value === cardId) {
+      if (value === cardView.card.id()) {
         this.slopMap.delete(key);
       }
     }

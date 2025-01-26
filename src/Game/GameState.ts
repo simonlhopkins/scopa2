@@ -15,7 +15,7 @@ class GameState {
   playerHands: Map<number, CardZone> = new Map();
   playerPiles: Map<number, CardZone> = new Map();
   playerTurn: number = 0;
-  numPlayers = 2;
+  numPlayers = 4;
   constructor() {
     for (let i = 1; i <= 10; i++) {
       this.deck.PushTop(new Card(Suit.CLUB, i));
@@ -36,6 +36,8 @@ class GameState {
       );
     }
   }
+
+  //todo: do some validation, and if it fails then set a new game
   loadFromJson(gameStateJson: GameStateJson): GameChange {
     this.playerTurn = gameStateJson.playerTurn;
     const initChange = new GameChange(gameStateJson.playerTurn);
@@ -69,9 +71,7 @@ class GameState {
 
     return initChange;
   }
-
-  NewGame() {
-    this.playerTurn = 0;
+  MoveAllCardsToDeck() {
     const gameChange = new GameChange(this.playerTurn);
     const backToDeck = this.GetCardIds().map((cardID) =>
       this.deck.PushTop(
@@ -81,12 +81,9 @@ class GameState {
       )
     );
     gameChange.AddMoves(backToDeck);
-    this.deck.Shuffle();
-    gameChange.Append(this.DealCards());
-    gameChange.Append(this.InitialTableCards());
-    gameChange.playerTurn = 0;
     return gameChange;
   }
+
   toJson(): GameStateJson {
     const hands = [...this.playerHands].map(([id, cardZone]) => ({
       id,
@@ -152,9 +149,10 @@ class GameState {
   }
   public DealCards(): GameChange {
     const gameChange = new GameChange(this.playerTurn);
-    for (let [_, value] of this.playerHands) {
-      for (let i = 0; i < 3; i++) {
-        //TODO maybe a helper method to check if this is even possible
+
+    for (let i = 0; i < 3; i++) {
+      //TODO maybe a helper method to check if this is even possible
+      for (let [_, value] of this.playerHands) {
         const card = this.deck.TakeTop();
         if (card) {
           gameChange.AddMove(value.PushTop(card));
@@ -162,16 +160,6 @@ class GameState {
       }
     }
     return gameChange;
-  }
-
-  private getUniquePairs(arr: Card[]): Card[][] {
-    const pairs: Card[][] = [];
-    for (let i = 0; i < arr.length; i++) {
-      for (let j = i + 1; j < arr.length; j++) {
-        pairs.push([arr[i], arr[j]]);
-      }
-    }
-    return pairs;
   }
 
   public GetPossibleScoops(hand: Card[]): ScoopResult[] {
@@ -203,11 +191,8 @@ class GameState {
     }
     return ret;
   }
-  private static CardArrToString(arr: Card[]) {
-    return arr.map((c) => c.toString()).join(", ");
-  }
 
-  public GetCardZoneFromPosition(zonePosition: ZonePosition) {
+  public GetCardZoneFromPosition(zonePosition: ZonePosition): CardZone | null {
     return (
       this.GetCardZones().find((zone) =>
         zone.zonePosition.Equals(zonePosition)
@@ -261,9 +246,9 @@ class GameState {
           const cardMove = playerPile!.PushTop(
             fromZone.TakeCard(scoopResultToPlay.handCard)!
           );
+          cardMove.setScopa(this.table.GetCards().length == 0);
           gameChange.AddMove(cardMove);
         } else {
-          console.log("cannot scoop with that card, adding it to the table");
           const cardMove = this.table.PushTop(fromZone.TakeCard(card)!);
           gameChange.AddMove(cardMove);
         }
@@ -274,9 +259,6 @@ class GameState {
         ) {
           if (this.deck.GetCards().length > 0) {
             gameChange.Append(this.DealCards());
-          } else {
-            gameChange.Append(this.NewGame());
-            console.log("GAME OVER");
           }
         }
         this.playerTurn++;
@@ -326,13 +308,80 @@ class GameState {
     for (const [key, value] of this.playerHands) {
       str += `\t${
         key == this.playerTurn ? `(${key})` : key
-      }: ${GameState.CardArrToString(value.GetCards())}\n`;
+      }: ${Util.CardArrToString(value.GetCards())}\n`;
     }
 
-    str += `table: ${GameState.CardArrToString(this.table.GetCards())}\n`;
+    str += `table: ${Util.CardArrToString(this.table.GetCards())}\n`;
     str += `num cards on table: ${this.table.GetCards().length}\n`;
     str += `num cards in deck: ${this.deck.GetCards().length}\n`;
     console.log(str);
+  }
+
+  CalculateScores() {
+    //most cards
+    const playerPileArr = [...this.playerPiles].map((item) => ({
+      id: item[0],
+      cards: item[1].GetCards(),
+    }));
+    const result = new ScoreResult();
+    //most cards
+    const mostCards = [...playerPileArr].sort(
+      (a, b) => b.cards.length - a.cards.length
+    );
+    if (mostCards[0].cards.length > mostCards[1].cards.length) {
+      result.MostCards = mostCards[0].id;
+    }
+    //most coins
+    const mostCoins = playerPileArr
+      .map((item) => ({
+        ...item,
+        cards: item.cards.filter((card) => card.suit == Suit.COIN),
+      }))
+      .sort((a, b) => b.cards.length - a.cards.length);
+    if (mostCoins[0].cards.length > mostCoins[1].cards.length) {
+      result.MostCoins = mostCoins[0].id;
+    }
+    //primera
+    const primera = playerPileArr
+      .map((item) => ({
+        ...item,
+        cards: item.cards.filter((card) => card.rank == 7),
+      }))
+      .sort((a, b) => b.cards.length - a.cards.length);
+    if (primera[0].cards.length > primera[1].cards.length) {
+      result.Primera = primera[0].id;
+    }
+
+    const playerWithSetteBello = playerPileArr.find((item) =>
+      item.cards.some((card) => card.Equals(new Card(Suit.COIN, 7)))
+    );
+
+    if (playerWithSetteBello) {
+      result.Settebello = playerWithSetteBello.id;
+    }
+    console.log(result);
+    return result;
+  }
+}
+
+export class ScoreResult {
+  MostCards: number | null = null;
+  MostCoins: number | null = null;
+  Primera: number | null = null;
+  Settebello: number | null = null;
+
+  toString() {
+    let str = "";
+    const getDescription = (player: number | null, desc: string) => {
+      return player != null
+        ? `Player ${player} had the ${desc}\n`
+        : `no one had the ${desc}\n`;
+    };
+    str += getDescription(this.MostCards, "most cards");
+    str += getDescription(this.MostCoins, "most coins");
+    str += getDescription(this.Primera, "primera");
+    str += getDescription(this.Settebello, "sette bello");
+    return str;
   }
 }
 

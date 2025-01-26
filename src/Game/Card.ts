@@ -48,7 +48,9 @@ class Card {
   toString(): string {
     return `[${this.rank}${this.getSuitSymbol()}]`;
   }
-
+  Equals(card: Card) {
+    return this.id() == card.id();
+  }
   id(): CardId {
     return `${this.suit}:${this.rank}` as CardId;
   }

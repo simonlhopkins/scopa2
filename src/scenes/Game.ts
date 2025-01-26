@@ -6,6 +6,10 @@ import Card, { CardId } from "../Game/Card";
 import TableView from "../Views/TableView";
 import HandView from "../Views/HandView";
 import Util from "../Util";
+import CardView from "../Views/CardView";
+import DeckView from "../Views/DeckView";
+import PileView from "../Views/PileView";
+import ICardZoneView from "../Views/ICardZoneView";
 
 export class Game extends Scene {
   camera: Phaser.Cameras.Scene2D.Camera;
@@ -13,10 +17,14 @@ export class Game extends Scene {
   msg_text: Phaser.GameObjects.Text;
   gameState: GameState = new GameState();
 
-  cardViewMap: Map<CardId, Phaser.GameObjects.Sprite> = new Map();
+  cardViewMap: Map<CardId, CardView> = new Map();
   tableView: TableView;
+  deckView: DeckView;
   handViews: Map<number, HandView> = new Map();
+  pileVies: Map<number, PileView> = new Map();
   heldCardId: CardId | null;
+  dragLayer: Phaser.GameObjects.Layer;
+  gameLayer: Phaser.GameObjects.Layer;
   private slopMap = new Map<number, CardId>();
   history: GameChange[] = [];
   // cardZoneViews: Map<ZonePosition, >
@@ -35,7 +43,15 @@ export class Game extends Scene {
     });
     //maybe I should pass a reference to the gamestate into here, or at least it's zone
     //should make a map of zone position to zone views
+    this.dragLayer = this.add.layer().setDepth(1);
+    this.gameLayer = this.add.layer().setDepth(0);
+
     this.tableView = this.add.existing(new TableView(this));
+    this.gameLayer.add(this.tableView);
+    this.deckView = this.add.existing(
+      new DeckView(this, new ZonePosition(CardZoneID.DECK, 0))
+    );
+    this.deckView.setPosition(80, 80);
     let handIndex = 0;
     for (const [playerID, cardZone] of this.gameState.playerHands) {
       //TODO: also add any cards that might be in the cardzone here? should initialize with no cards though since the gamestate starts with everything in the deck
@@ -43,10 +59,14 @@ export class Game extends Scene {
         new HandView(this, cardZone.zonePosition)
       );
       this.handViews.set(cardZone.zonePosition.index, newHandView);
+      const newPileView = this.add.existing(new PileView(this));
+      this.handViews.set(cardZone.zonePosition.index, newHandView);
+      this.pileVies.set(cardZone.zonePosition.index, newPileView);
       const radian = (handIndex / this.gameState.numPlayers) * Math.PI * 2;
       const xOff = Math.cos(radian) * 300;
       const yOff = Math.sin(radian) * 300;
       newHandView.setPosition(512 + xOff, 384 + yOff);
+      newPileView.setPosition(512 + xOff - 80, 384 + yOff);
       handIndex++;
     }
     this.tableView.setPosition(512, 384);
@@ -60,11 +80,8 @@ export class Game extends Scene {
     for (const id of this.gameState.GetCardIds()) {
       const card = this.gameState.GetCardFromId(id);
       if (card) {
-        const textureName = Card.GetTextureName(card);
-        const newCardView = this.add.sprite(0, 0, textureName);
-        newCardView.setOrigin(0.5, 0.5);
-        newCardView.setInteractive({ draggable: true });
-        newCardView.setScale(3);
+        const newCardView = this.add.existing(new CardView(this, card));
+        this.gameLayer.add(newCardView);
         this.input.setDraggable(newCardView);
         this.cardViewMap.set(id, newCardView);
         const pos = this.GetCardTargetPosition(id)!;
@@ -108,23 +125,6 @@ export class Game extends Scene {
 
     for (const [player, pileCap] of pileMoveMap) {
       const pilePos = this.GetPilePosition(player);
-      const tableCards = pileCap.filter(
-        (item) => item.fromPosition.id == CardZoneID.TABLE
-      );
-
-      const midPoint = tableCards
-        .map((item) => this.cardViewMap.get(item.card.id())!)
-        .reduce(
-          (prev, current) => {
-            return {
-              x: prev.x + current.x,
-              y: prev.y + current.y,
-            };
-          },
-          { x: 0, y: 0 }
-        );
-      midPoint.x /= tableCards.length;
-      midPoint.y /= tableCards.length;
       //move each of the cards to the index based on their capture arr, then move into the pile.
       for (let i = 0; i < pileCap.length; i++) {
         const offsetPos = pilePos
@@ -137,14 +137,14 @@ export class Game extends Scene {
               x: offsetPos.x,
               y: offsetPos.y,
               angle: 0,
-              ease: Phaser.Math.Easing.Sine.InOut, // 'Cubic', 'Elastic', 'Bounce', 'Back'
+              ease: Phaser.Math.Easing.Sine.InOut,
               duration: 300,
             },
             {
               delay: 500,
               x: pilePos.x,
               y: pilePos.y,
-              ease: Phaser.Math.Easing.Back.InOut, // 'Cubic', 'Elastic', 'Bounce', 'Back'
+              ease: Phaser.Math.Easing.Back.InOut,
               duration: 300,
             },
           ],
@@ -161,7 +161,8 @@ export class Game extends Scene {
       );
     for (let i = 0; i < dealtMoves.length; i++) {
       const cardView = this.cardViewMap.get(dealtMoves[i].card.id())!;
-      const toPos = this.GetCardTargetPosition(dealtMoves[i].card.id())!;
+      //dealtMoves[i].toPosition.AddCardView
+      const toPos = cardView.GetTargetPos();
       this.add.tween({
         targets: cardView,
         x: toPos.x,
@@ -171,25 +172,35 @@ export class Game extends Scene {
         ease: Phaser.Math.Easing.Sine.Out,
       });
     }
-    //make the current player's cards bigger
-    // const currentPlayerCardViews = this.gameState.playerHands
-    //   .get(this.gameState.playerTurn)!
-    //   .GetCards();
-    // currentPlayerCardViews
-    //   .map((item) => this.cardViewMap.get(item.id())!)
-    //   .forEach((cardView) => {
-    //     this.add.tween({
-    //       targets: cardView,
-    //       scaleX: "+=0.2",
-    //       scaleY: "+=0.2",
-    //       duration: 200,
-    //       ease: Phaser.Math.Easing.Back.Out,
-    //     });
-    //   });
+
+    //deck to center
+    const deckToTableMoves = gameChange
+      .GetMoves()
+      .filter(
+        (move) =>
+          move.toPosition.id == CardZoneID.TABLE &&
+          move.fromPosition.id == CardZoneID.DECK
+      );
+
+    //I just don't know if I always want card moves to do this!!!! maybe I do
+    deckToTableMoves.forEach((move, i) => {
+      const cardView = this.cardViewMap.get(move.card.id())!;
+      const toPos = cardView.GetTargetPos();
+      this.add.tween({
+        targets: cardView,
+        x: toPos.x,
+        y: toPos.y,
+        duration: 500,
+        delay: i * 200,
+        ease: Phaser.Math.Easing.Sine.Out,
+      });
+    });
+
     const remainingMoves = gameChange
       .GetMoves()
       .filter((item) => !toPileMoves.includes(item))
-      .filter((item) => !dealtMoves.includes(item));
+      .filter((item) => !dealtMoves.includes(item))
+      .filter((item) => !deckToTableMoves.includes(item));
     for (const move of remainingMoves) {
       this.AnimateCardMove(move);
     }
@@ -198,7 +209,7 @@ export class Game extends Scene {
   AnimateCardMove(cardMove: CardMove) {
     const cardId = cardMove.card.id();
     const cardView = this.cardViewMap.get(cardId)!;
-    const toPos = this.GetCardTargetPosition(cardId)!;
+    const toPos = cardView.GetTargetPos();
     this.CancelTweensOnGameObject(cardView);
     if (cardMove.fromPosition.Equals(cardMove.toPosition)) {
       //returning to starting pos
@@ -238,6 +249,24 @@ export class Game extends Scene {
     }
   }
 
+  GetLastPersonToScoopCards() {
+    for (let i = this.history.length - 1; i >= 0; i--) {
+      const gameChange = this.history[i];
+      const hadTableCardsGoToAPile = gameChange
+        .GetMoves()
+        .some(
+          (move) =>
+            move.fromPosition.id == CardZoneID.TABLE &&
+            move.toPosition.id == CardZoneID.PILE
+        );
+      //todo, I don't think I need to check if this also had a hand card go to pile, I don't think there is any other way that a card can go from the table to a pile.
+      if (hadTableCardsGoToAPile) {
+        return gameChange.playerTurn;
+      }
+    }
+    return null;
+  }
+
   //problem, this only will update the position of the cards that are involved in the GameChange, so, for example, if you remove a card from the middle of a card[], and move it somewhere, you might expect that it would shift all the cards above it over, but it currently does not.
   // I could keep track of all of the views effected by the gameChange, and then do a manual recalculation of all of the card positions or something
   ApplyChange(gameChange: GameChange | null) {
@@ -257,39 +286,49 @@ export class Game extends Scene {
       }
       //I can change this to only use to zone if I only want it to update when we move a card into it.
       effectedZones.add(cardMove.toPosition);
-      // effectedZones.add(cardMove.fromPosition);
-      //we can get info about where a card needs to go from the card move
-      //we have all of the changes we want to make, so we need to tween the cards to the positions of the hands,
-      //specific logic for other state that needs to update based on the to and from position
-      if (cardMove.fromPosition.id == CardZoneID.TABLE) {
-        for (let [key, value] of this.slopMap) {
-          if (value === cardMove.card.id()) {
-            this.slopMap.delete(key);
-          }
-        }
-      }
+      // // effectedZones.add(cardMove.fromPosition);
+      // //we can get info about where a card needs to go from the card move
+      // //we have all of the changes we want to make, so we need to tween the cards to the positions of the hands,
+      // //specific logic for other state that needs to update based on the to and from position
+      // if (cardMove.fromPosition.id == CardZoneID.TABLE) {
+      //   for (let [key, value] of this.slopMap) {
+      //     if (value === cardMove.card.id()) {
+      //       this.slopMap.delete(key);
+      //     }
+      //   }
+      // }
 
-      //specific state updates depending on where the card move is going to
+      // //specific state updates depending on where the card move is going to
 
-      if (cardMove.toPosition.id == CardZoneID.TABLE) {
-        let spotNum = 0;
-        while (this.slopMap.has(spotNum)) {
-          spotNum++;
-        }
-        this.slopMap.set(spotNum, cardMove.card.id());
-        for (const [key, value] of this.slopMap) {
-          const cardView = this.cardViewMap.get(value);
-          cardView!.setDepth(key);
-        }
-      } else {
-        const cardStackContaining = this.gameState.GetCardStackOfCard(
-          cardMove.card.id()
-        )!;
-        for (let i = 0; i < cardStackContaining.length; i++) {
-          this.cardViewMap.get(cardStackContaining[i].id())!.setDepth(i);
-        }
-      }
+      // if (cardMove.toPosition.id == CardZoneID.TABLE) {
+      //   let spotNum = 0;
+      //   while (this.slopMap.has(spotNum)) {
+      //     spotNum++;
+      //   }
+      //   this.slopMap.set(spotNum, cardMove.card.id());
+      //   for (const [key, value] of this.slopMap) {
+      //     const cardView = this.cardViewMap.get(value);
+      //     cardView!.setDepth(key);
+      //   }
+      // } else {
+      //   const cardStackContaining = this.gameState.GetCardStackOfCard(
+      //     cardMove.card.id()
+      //   )!;
+      //   for (let i = 0; i < cardStackContaining.length; i++) {
+      //     this.cardViewMap.get(cardStackContaining[i].id())!.setDepth(i);
+      //   }
+      // }
+
+      const toZone = this.GetCardZoneViewFromZonePosition(cardMove.toPosition);
+      const fromZone = this.GetCardZoneViewFromZonePosition(
+        cardMove.fromPosition
+      );
+
+      fromZone.RemoveCardView(cardView);
+      toZone.AddCardView(cardView);
+      // cardView.UpdatePos();
     }
+
     this.AnimateGameChange(gameChange);
     //I think that we only need this for the hands, this resets the hand card positions
     Array.from(effectedZones)
@@ -298,10 +337,9 @@ export class Game extends Scene {
         for (const card of this.gameState
           .GetCardZoneFromPosition(zone)!
           .GetCards()) {
-          if (!this.IsTweening(this.cardViewMap.get(card.id())!)) {
-            this.AnimateCardMove(
-              new CardMove(card, card.currentZone, card.currentZone)
-            );
+          const cardView = this.cardViewMap.get(card.id())!;
+          if (!this.IsTweening(cardView)) {
+            cardView.UpdatePos();
           }
         }
       });
@@ -312,7 +350,7 @@ export class Game extends Scene {
   ResetHandCards(id: number) {}
 
   Undo() {
-    const lastGameChange = this.history.pop();
+    const lastGameChange = this.PopFromHistory();
     if (lastGameChange) {
       const reversed = lastGameChange.Reverse();
       //it would be nice if undo was in gamestate so I didn't have to remember to do this but game state just generates gamemoves, so it is unclear where one move finishes and another begins, and single turns can consist of multiple of those gamemove functions, for example, moving to table AND dealing out more cards
@@ -337,6 +375,15 @@ export class Game extends Scene {
   CancelTweensOnGameObject(gameObject: Phaser.GameObjects.GameObject) {
     this.tweens.killTweensOf(gameObject);
   }
+  AddToHistory(gameChange: GameChange) {
+    this.history.push(gameChange);
+    localStorage.setItem("history", JSON.stringify(this.history));
+  }
+  PopFromHistory() {
+    const poppedMove = this.history.pop();
+    localStorage.setItem("history", JSON.stringify(this.history));
+    return poppedMove;
+  }
   initializeInput() {
     this.input.keyboard!.on("keydown-U", () => {
       const undoMove = this.Undo();
@@ -344,17 +391,56 @@ export class Game extends Scene {
         this.ApplyChange(undoMove);
       }
     });
+    this.input.keyboard!.on("keydown-C", () => {
+      const result = this.gameState.CalculateScores();
+      console.log(result.toString());
+    });
     this.input.keyboard!.on("keydown-P", () => {
-      const newGameChange = this.gameState.PlayTurn();
-      if (newGameChange) {
-        this.history.push(newGameChange);
-        this.ApplyChange(newGameChange);
+      const playTurn = this.gameState.PlayTurn();
+      if (playTurn) {
+        this.AddToHistory(playTurn);
+        this.ApplyChange(playTurn);
       }
     });
+    let timeline: null | Phaser.Time.Timeline = null;
     this.input.keyboard!.on("keydown-N", () => {
-      const newGameChange = this.gameState.NewGame();
-      this.history.push(newGameChange);
-      this.ApplyChange(newGameChange);
+      // newGameDealTimeline.stop();
+      // newGameDealTimeline.reset();
+      if (timeline) {
+        timeline.stop();
+      }
+
+      const moveAllCardsChange = this.gameState.MoveAllCardsToDeck();
+      const dealChange = this.gameState.DealCards();
+      const initialDeal = this.gameState.InitialTableCards();
+      this.AddToHistory(
+        moveAllCardsChange.Copy().Append(dealChange).Append(initialDeal)
+      );
+      this.gameState.playerTurn = 0;
+      // this.AddToHistory(dealChange);
+      // this.AddToHistory(initialDeal);
+      // this.gameState.playerTurn = 0;
+      timeline = this.add.timeline([
+        {
+          at: 0,
+          run: () => {
+            this.ApplyChange(moveAllCardsChange);
+          },
+        },
+        {
+          at: 500,
+          run: () => {
+            this.ApplyChange(dealChange);
+          },
+        },
+        {
+          at: 1000,
+          run: () => {
+            this.ApplyChange(initialDeal);
+          },
+        },
+      ]);
+      timeline.play();
     });
 
     this.input.on(
@@ -374,6 +460,12 @@ export class Game extends Scene {
               duration: 400,
               ease: Phaser.Math.Easing.Back.Out,
             });
+          } else if (cardOver.currentZone.id == CardZoneID.PILE) {
+            console.log(
+              this.gameState
+                .GetCardZoneFromPosition(cardOver.currentZone)
+                ?.toString()
+            );
           }
         }
       }
@@ -407,6 +499,7 @@ export class Game extends Scene {
         for (const [id, cardView] of this.cardViewMap) {
           if (cardView == gameObject) {
             this.heldCardId = id;
+            this.dragLayer.add(cardView);
             this.CancelTweensOnGameObject(cardView);
             console.log("clicked on" + id);
             break;
@@ -511,6 +604,7 @@ export class Game extends Scene {
             card.currentZone,
             card.currentZone
           );
+          this.gameLayer.add(this.cardViewMap.get(this.heldCardId)!);
           gameChange.AddMove(cardMove);
           this.ApplyChange(gameChange);
         } else {
@@ -558,15 +652,13 @@ export class Game extends Scene {
             if (gameChange) {
               console.log("successful board move!!!");
               //board move will take care of the animations
-              this.history.push(gameChange);
-              this.ApplyChange(gameChange);
-              this.heldCardId = null;
-              await Util.wait(2);
-              const newGameChange = this.gameState.PlayTurn();
-              if (newGameChange) {
-                this.history.push(newGameChange);
-                this.ApplyChange(newGameChange);
+              if (gameChange.GetMoves().some((move) => move.isScopa)) {
+                console.log("SCOPA!!!! for player " + gameChange.playerTurn);
               }
+              this.AddToHistory(gameChange);
+              this.ApplyChange(gameChange);
+              this.gameLayer.add(this.cardViewMap.get(this.heldCardId)!);
+              this.heldCardId = null;
             } else {
               console.log("cannot do a move with that drop");
             }
@@ -581,6 +673,7 @@ export class Game extends Scene {
   onMouseUp() {}
 
   //am I able to get the target rect of any card just by looking at the gamestate???
+  //this doesn't work if I want to update the gamestate multiple times, get those game changes, and then animate the game changes separately (like animate to deck, the redeal. I want to move cards to deck then move to hands in the state immediately, but I don't want to animate all that simultaneously (since it would only animate the cards to their final positions.))
   //idea is that you ask the cardzone the card currently belongs to, based on it's state, where it should put the card we're talking about
   private GetCardTargetPosition(cardID: CardId): Phaser.Math.Vector2 | null {
     const card = this.gameState.GetCardFromId(cardID) ?? null;
@@ -622,11 +715,26 @@ export class Game extends Scene {
         const offsetY = Math.floor(slotNum / 2) * 60;
         return new Phaser.Math.Vector2(512 + offsetX - 60, 384 + offsetY);
     }
-    return null;
   }
   //todo make some actual views
   GetPilePosition(index: number) {
     const assocHand = this.handViews.get(index);
-    return assocHand!.GetPosition().add(new Phaser.Math.Vector2(0, 200));
+    if (this.gameState.numPlayers == 4 && (index == 1 || index == 3)) {
+      return assocHand!.GetPosition().add(new Phaser.Math.Vector2(-150, 0));
+    }
+    return assocHand!.GetPosition().add(new Phaser.Math.Vector2(0, 170));
+  }
+
+  GetCardZoneViewFromZonePosition(zonePosition: ZonePosition): ICardZoneView {
+    switch (zonePosition.id) {
+      case CardZoneID.DECK:
+        return this.deckView;
+      case CardZoneID.TABLE:
+        return this.tableView;
+      case CardZoneID.HAND:
+        return this.handViews.get(zonePosition.index)!;
+      case CardZoneID.PILE:
+        return this.pileVies.get(zonePosition.index)!;
+    }
   }
 }

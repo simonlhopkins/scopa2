@@ -20,6 +20,12 @@ class GameChange {
   }
   public Append(gameChange: GameChange) {
     this.cardMoves = this.cardMoves.concat(gameChange.GetMoves());
+    return this;
+  }
+  public Copy() {
+    const ret = new GameChange(this.playerTurn);
+    ret.AddMoves(this.GetMoves());
+    return ret;
   }
   Reverse() {
     const reversedGameChange = new GameChange(this.playerTurn);
@@ -41,7 +47,9 @@ class GameChange {
     str += this.cardMoves
       .map(
         (cardMove, i) =>
-          `\t${i}. ${cardMove.card.toString()} moved from ${cardMove.fromPosition!.toString()} to ${cardMove.toPosition!.toString()}\n`
+          `\t${
+            i + 1
+          }. ${cardMove.card.toString()} moved from ${cardMove.fromPosition!.toString()} to ${cardMove.toPosition!.toString()}\n`
       )
       .join("");
     return str;
@@ -51,6 +59,7 @@ export class CardMove {
   card: Card;
   fromPosition: ZonePosition;
   toPosition: ZonePosition;
+  isScopa: boolean = false;
   constructor(
     _card: Card,
     _fromPosition: ZonePosition,
@@ -59,6 +68,9 @@ export class CardMove {
     this.card = _card;
     this.toPosition = _toPosition;
     this.fromPosition = _fromPosition;
+  }
+  setScopa(isScopa: boolean) {
+    this.isScopa = isScopa;
   }
 }
 
