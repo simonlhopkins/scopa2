@@ -27,6 +27,7 @@ export class Preloader extends Scene {
     this.load.setPath("assets");
 
     this.load.image("logo", "logo.png");
+    this.load.image("cardBack", `KIN's_Playing_Cards/Back_2.png`);
     const suits = ["Diamonds", "Hearts", "Clubs", "Spades"];
     const ranks = Array.from(Array(8).keys())
       .map((i) => (i + 2).toString())

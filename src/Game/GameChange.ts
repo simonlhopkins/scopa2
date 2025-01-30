@@ -1,14 +1,22 @@
 import Card from "./Card";
 import { ZonePosition } from "./CardZone";
+import { ScoopResult } from "./GameState";
 
 // should be used for UI transitions as well
 class GameChange {
   private cardMoves: CardMove[] = [];
   playerTurn: number;
-  constructor(_playerTurn: number) {
+  fromPlayer: number;
+  toPlayer: number;
+  scoopResults: ScoopResult[] = [];
+  constructor(_playerTurn: number, _fromPlayer: number, _toPlayer: number) {
     this.playerTurn = _playerTurn;
+    this.fromPlayer = _fromPlayer;
+    this.toPlayer = _toPlayer;
   }
-
+  public AddScoopResult(scoopResult: ScoopResult) {
+    this.scoopResults.push(scoopResult);
+  }
   public AddMove(move: CardMove) {
     this.cardMoves.push(move);
   }
@@ -23,12 +31,16 @@ class GameChange {
     return this;
   }
   public Copy() {
-    const ret = new GameChange(this.playerTurn);
+    const ret = new GameChange(this.playerTurn, this.fromPlayer, this.toPlayer);
     ret.AddMoves(this.GetMoves());
     return ret;
   }
   Reverse() {
-    const reversedGameChange = new GameChange(this.playerTurn);
+    const reversedGameChange = new GameChange(
+      this.fromPlayer,
+      this.toPlayer,
+      this.fromPlayer
+    );
     const reversedMoves = [...this.GetMoves()].reverse();
     for (const move of reversedMoves) {
       const reversedMove = new CardMove(
@@ -44,6 +56,8 @@ class GameChange {
   toString(): string {
     let str = "GAME CHANGE:\n";
     str += `Player turn ${this.playerTurn}\n`;
+    str += `from player ${this.fromPlayer}\n`;
+    str += `to player ${this.toPlayer}\n`;
     str += this.cardMoves
       .map(
         (cardMove, i) =>

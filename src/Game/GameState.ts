@@ -4,7 +4,7 @@ import CardZone, { CardZoneID, ZonePosition } from "./CardZone";
 import GameChange, { CardMove } from "./GameChange";
 import Util from "../Util";
 
-interface ScoopResult {
+export interface ScoopResult {
   handCard: Card;
   tableCards: Card[];
 }
@@ -14,7 +14,7 @@ class GameState {
   table: CardZone = new CardZone(new ZonePosition(CardZoneID.TABLE, 0), []);
   playerHands: Map<number, CardZone> = new Map();
   playerPiles: Map<number, CardZone> = new Map();
-  playerTurn: number = 0;
+  private playerTurn: number = 0;
   numPlayers = 4;
   constructor() {
     for (let i = 1; i <= 10; i++) {
@@ -36,11 +36,39 @@ class GameState {
       );
     }
   }
+  ResetPlayerTurn() {
+    this.playerTurn = 0;
+  }
+  GetPlayerTurn(): number {
+    return this.playerTurn;
+  }
 
+  ReturnCardToStartingLocation(card: Card): GameChange {
+    const gameChange = new GameChange(
+      this.playerTurn,
+      this.playerTurn,
+      this.playerTurn
+    );
+    const cardMove = new CardMove(card, card.currentZone, card.currentZone);
+    gameChange.AddMove(cardMove);
+    return gameChange;
+  }
+  IsGameOver() {
+    return (
+      this.deck.GetCards().length == 0 &&
+      [...this.playerHands].every(
+        ([id, cardZone]) => cardZone.GetCards().length == 0
+      )
+    );
+  }
   //todo: do some validation, and if it fails then set a new game
   loadFromJson(gameStateJson: GameStateJson): GameChange {
     this.playerTurn = gameStateJson.playerTurn;
-    const initChange = new GameChange(gameStateJson.playerTurn);
+    const initChange = new GameChange(
+      gameStateJson.playerTurn,
+      gameStateJson.playerTurn,
+      gameStateJson.playerTurn
+    );
     //everything should be in the deck at this point
     for (const { id, cards } of gameStateJson.hands) {
       const cardMoves = cards.map((card) =>
@@ -71,8 +99,28 @@ class GameState {
 
     return initChange;
   }
+  MoveTableCardsToPlayerPile(playerNum: number) {
+    const gameChange = new GameChange(
+      this.playerTurn,
+      this.playerTurn,
+      this.playerTurn
+    );
+    const playerPile = this.GetCardZoneFromPosition(
+      new ZonePosition(CardZoneID.PILE, playerNum)
+    )!;
+
+    for (const card of this.table.GetCards()) {
+      const move = playerPile.PushTop(this.table.TakeCard(card)!);
+      gameChange.AddMove(move);
+    }
+    return gameChange;
+  }
   MoveAllCardsToDeck() {
-    const gameChange = new GameChange(this.playerTurn);
+    const gameChange = new GameChange(
+      this.playerTurn,
+      this.playerTurn,
+      this.playerTurn
+    );
     const backToDeck = this.GetCardIds().map((cardID) =>
       this.deck.PushTop(
         this.GetCardZoneFromPosition(
@@ -137,7 +185,11 @@ class GameState {
   }
 
   public InitialTableCards(): GameChange {
-    const gameChange = new GameChange(this.playerTurn);
+    const gameChange = new GameChange(
+      this.playerTurn,
+      this.playerTurn,
+      this.playerTurn
+    );
 
     for (let i = 0; i < 4; i++) {
       const card = this.deck.TakeTop();
@@ -148,8 +200,8 @@ class GameState {
     return gameChange;
   }
   public DealCards(): GameChange {
-    const gameChange = new GameChange(this.playerTurn);
-
+    const gameChange = new GameChange(this.playerTurn, this.playerTurn, 0);
+    this.playerTurn = 0;
     for (let i = 0; i < 3; i++) {
       //TODO maybe a helper method to check if this is even possible
       for (let [_, value] of this.playerHands) {
@@ -207,7 +259,7 @@ class GameState {
       const toZone = this.GetCardZoneFromPosition(move.toPosition)!;
       toZone.PushTop(fromZone.TakeCard(move.card)!);
     }
-    this.playerTurn = gameChange.playerTurn;
+    this.playerTurn = gameChange.toPlayer;
   }
   //nice!!
   //this is more like a resolve card move, where it goes through ALL of the possible rules of scopa and lets us know if it would result in a game change or not.
@@ -227,7 +279,15 @@ class GameState {
       ) {
         const possibleScoops = this.GetPossibleScoops([card]);
         //just need to check if the card can scoop the table
-        const gameChange = new GameChange(this.playerTurn);
+        const startPlayer = this.playerTurn;
+        this.playerTurn++;
+        this.playerTurn %= this.numPlayers;
+        const gameChange = new GameChange(
+          startPlayer,
+          startPlayer,
+          this.playerTurn
+        );
+
         if (possibleScoops.length > 0) {
           //todo, establish what player is playing the card sooner so we don't have to do this
           const playerPile = this.playerPiles.get(fromZone.zonePosition.index);
@@ -235,6 +295,7 @@ class GameState {
             (a: ScoopResult, b: ScoopResult) =>
               b.tableCards.length - a.tableCards.length
           );
+          //todo: give player option of which scoop to do if there are multiple options
           const scoopResultToPlay = possibleScoops[0];
           for (const tableCard of scoopResultToPlay.tableCards) {
             const cardMove = playerPile!.PushTop(
@@ -243,11 +304,13 @@ class GameState {
             gameChange.AddMove(cardMove);
           }
           //create a card move for the card in the hand
-          const cardMove = playerPile!.PushTop(
+          const handToPileCardMove = playerPile!.PushTop(
             fromZone.TakeCard(scoopResultToPlay.handCard)!
           );
-          cardMove.setScopa(this.table.GetCards().length == 0);
-          gameChange.AddMove(cardMove);
+          //ehh idk if I like this
+          handToPileCardMove.setScopa(this.table.GetCards().length == 0);
+          gameChange.AddScoopResult(scoopResultToPlay);
+          gameChange.AddMove(handToPileCardMove);
         } else {
           const cardMove = this.table.PushTop(fromZone.TakeCard(card)!);
           gameChange.AddMove(cardMove);
@@ -261,8 +324,11 @@ class GameState {
             gameChange.Append(this.DealCards());
           }
         }
-        this.playerTurn++;
-        this.playerTurn %= this.numPlayers;
+        //is it true that if a card is moved from a hand to a table then the turn will always increase?
+        // this.playerTurn++;
+        //         this.playerTurn %= this.numPlayers;
+        // this.playerTurn++;
+        // this.playerTurn %= this.numPlayers;
         return gameChange;
       }
       //other to and from moves
@@ -270,10 +336,10 @@ class GameState {
     return null;
   }
 
-  PlayTurn(): GameChange | null {
-    const playerHand = this.playerHands.get(this.playerTurn);
+  GetBestCardToPlayForPlayer(player: number): CardId | null {
+    const playerHand = this.playerHands.get(player);
     if (!playerHand || !this.playerPiles) {
-      console.log(`error: no player [${this.playerTurn}] found`);
+      console.log(`error: no player [${player}] found`);
       return null;
     }
     const possibleScoops = this.GetPossibleScoops(playerHand.GetCards());
@@ -282,22 +348,17 @@ class GameState {
       console.log("scooping...");
       const scoopResultToPlay = Phaser.Utils.Array.GetRandom(possibleScoops);
       //create a card move for each of the cards on the table
-      return this.MoveCard(
-        scoopResultToPlay.handCard.id(),
-        new ZonePosition(CardZoneID.TABLE, 0)
-      );
+      return scoopResultToPlay.handCard.id();
     } else {
-      console.log("playing from hand to table");
       if (playerHand.GetCards().length == 0) {
         return null;
       }
-      const randomCardToPlay = Phaser.Utils.Array.GetRandom(
-        playerHand.GetCards()
-      );
-      return this.MoveCard(
-        randomCardToPlay.id(),
-        new ZonePosition(CardZoneID.TABLE, 0)
-      );
+      const minRankCard = playerHand
+        .GetCards()
+        .reduce((minCard, currentCard) => {
+          return currentCard.rank < minCard.rank ? currentCard : minCard;
+        });
+      return minRankCard.id();
     }
   }
   PrintCurrentState() {

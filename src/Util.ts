@@ -30,6 +30,6 @@ export default class Util {
   }
 
   static CardArrToString(arr: Card[]) {
-    return arr.map((c) => c.toString()).join(", ");
+    return `${arr.length} cards: ` + arr.map((c) => c.toString()).join(", ");
   }
 }
