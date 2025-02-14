@@ -39,6 +39,7 @@ export class Preloader extends Scene {
         this.load.image(name, `KIN's_Playing_Cards/${name}.png`);
       }
     }
+    this.load.image("marioCardback", "cardbacks/dance-and-dash-flyer.jpg");
 
     this.load.image("tileBG", "tileBG.png");
   }

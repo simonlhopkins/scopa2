@@ -26,6 +26,7 @@
     },
     "dependencies": {
         "@types/serialize-javascript": "^5.0.4",
+        "finity": "^0.5.4",
         "phaser": "^3.87.0",
         "serialize-javascript": "^6.0.2"
     }

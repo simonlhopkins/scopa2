@@ -2,6 +2,9 @@ import Card, { CardId } from "../Game/Card";
 
 class CardView extends Phaser.GameObjects.Container {
   private cardSprite: Phaser.GameObjects.Sprite;
+  private cardbackSprite: Phaser.GameObjects.Sprite;
+  private cardParent: Phaser.GameObjects.Container;
+
   card: Card;
   flipTween: Phaser.Tweens.TweenChain | null = null;
   private isFlipped = false;
@@ -11,12 +14,18 @@ class CardView extends Phaser.GameObjects.Container {
   constructor(scene: Phaser.Scene, card: Card) {
     super(scene);
     this.card = card;
+    this.cardParent = this.scene.add.container();
+    this.add(this.cardParent);
     this.cardSprite = this.scene.add
       .sprite(0, 0, Card.GetTextureName(card))
       .setOrigin(0.5, 0.5)
       .setScale(3);
-    this.add(this.cardSprite);
 
+    this.cardbackSprite = this.scene.add
+      .sprite(0, 0, "marioCardback")
+      .setScale(0.04);
+    this.cardParent.add([this.cardSprite, this.cardbackSprite]);
+    this.cardbackSprite.alpha = 0;
     this.setInteractive(
       this.cardSprite.getBounds(),
       Phaser.Geom.Rectangle.Contains
@@ -35,27 +44,34 @@ class CardView extends Phaser.GameObjects.Container {
     return this.targetPosition;
   }
   Flip(forceFlip?: boolean) {
-    if (this.isFlipped == forceFlip) return;
-    this.isFlipped = forceFlip ?? !this.isFlipped;
+    if (this.isFlipped == forceFlip) {
+      console.log("anim skipped");
+      return;
+    }
+    this.isFlipped = forceFlip || !this.isFlipped;
     if (this.flipTween) {
       this.flipTween.stop();
     }
+
     this.flipTween = this.scene.tweens.chain({
-      targets: this.cardSprite,
+      targets: this.cardParent,
       tweens: [
         {
           scaleX: 0,
-          duration: 200,
+          duration: 3000,
           ease: Phaser.Math.Easing.Linear,
           onComplete: () => {
             this.cardSprite.setTexture(
               this.isFlipped ? "cardBack" : Card.GetTextureName(this.card)
             );
+            // this.cardbackSprite.alpha = this.isFlipped ? 1 : 0;
+            // this.cardSprite.alpha = this.isFlipped ? 0 : 1;
           },
         },
         {
-          scaleX: 3,
-          duration: 200,
+          scaleX: 1,
+          duration: 3000,
+
           ease: Phaser.Math.Easing.Linear,
         },
       ],
@@ -72,15 +88,14 @@ class CardView extends Phaser.GameObjects.Container {
     // this.setPosition(this.targetPosition.x, this.targetPosition.y);
   }
   AnimateToTargetPos() {
-    this.scene.add.tween({
+    return this.scene.add.tween({
       targets: this,
       x: this.targetPosition.x,
       y: this.targetPosition.y,
       angle: 0,
       duration: 400,
-      ease: Phaser.Math.Easing.Back.Out,
+      ease: Phaser.Math.Easing.Sine.InOut,
     });
-    // this.setPosition(this.targetPosition.x, this.targetPosition.y);
   }
   id() {
     return this.card.id();

@@ -129,6 +129,7 @@ class GameState {
       )
     );
     gameChange.AddMoves(backToDeck);
+    this.deck.Shuffle();
     return gameChange;
   }
 

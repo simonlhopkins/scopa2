@@ -9,8 +9,48 @@ import CardView from "../Views/CardView";
 import DeckView from "../Views/DeckView";
 import PileView from "../Views/PileView";
 import ICardZoneView from "../Views/ICardZoneView";
-import AnimationController from "../AnimationController";
+import AnimationController, { AnimationResult } from "../AnimationController";
+import Util from "../Util";
 
+const fragmentShader = `
+//@machine_shaman
+precision mediump float;
+
+uniform float time;
+uniform vec2 mouse;
+uniform vec2 resolution;
+uniform sampler2D iChannel0;
+
+void main() {
+
+    vec2 uv = (2. * gl_FragCoord.xy - resolution) / resolution.y;
+
+    // Scale the checkerboard pattern
+    float scale = 10.0; // Adjust for larger/smaller squares
+    uv *= scale;
+
+    // Scroll speed
+    float speed = 0.5;
+    uv.x += time * speed;
+    uv.y += time * speed;
+
+    vec3 pastelPink = vec3(1.0, 0.8, 0.9);
+    vec3 pastelGreen = vec3(0.7, 1.0, 0.8);
+
+    // Create a checkerboard pattern
+    float checker = mod(floor(uv.x) + floor(uv.y), 2.0);
+    vec3 color = mix(pastelPink, pastelGreen, checker);
+    // Set colors
+
+
+    gl_FragColor = texture2D(iChannel0, uv);
+}`;
+enum TurnState {
+  Idle,
+  Player,
+  NPC,
+}
+const playerNumber = 2;
 export class Game extends Scene {
   camera: Phaser.Cameras.Scene2D.Camera;
   background: Phaser.GameObjects.Image;
@@ -24,14 +64,14 @@ export class Game extends Scene {
   pileViews: Map<number, PileView> = new Map();
   heldCardId: CardId | null;
   dragLayer: Phaser.GameObjects.Layer;
-  gameLayer: Phaser.GameObjects.Layer;
 
   animationController: AnimationController;
   history: GameChange[] = [];
 
   //I should move these out into something else maybe
   newGameDealTimeline: null | Phaser.Time.Timeline = null;
-
+  turnState: TurnState = TurnState.Player;
+  currentAnimationResult: AnimationResult | null = null;
   // cardZoneViews: Map<ZonePosition, >
   constructor() {
     super("Game");
@@ -44,6 +84,10 @@ export class Game extends Scene {
   }
 
   create() {
+    const base = new Phaser.Display.BaseShader("rect", fragmentShader);
+
+    this.animationController.Create();
+    this.animationController.animationLayer.setDepth(1);
     const bg = this.add.tileSprite(0, 0, 2500, 2500, "tileBG");
     this.add.tween({
       targets: bg,
@@ -52,19 +96,18 @@ export class Game extends Scene {
       loop: -1,
       duration: 5000,
     });
+    const shader = this.add.shader(base, 0, 0, 500, 500).setOrigin(0.0);
+    shader.setChannel0("tileBG");
     //maybe I should pass a reference to the gamestate into here, or at least it's zone
     //should make a map of zone position to zone views
-    this.dragLayer = this.add.layer().setDepth(1);
-    this.gameLayer = this.add.layer().setDepth(0);
-
+    this.dragLayer = this.add.layer().setDepth(2);
     this.tableView = this.add.existing(new TableView(this));
-    this.gameLayer.add(this.tableView);
     this.deckView = this.add.existing(
       new DeckView(this, new ZonePosition(CardZoneID.DECK, 0))
     );
     this.deckView.setPosition(80, 80);
     let handIndex = 0;
-    for (const [playerID, cardZone] of this.gameState.playerHands) {
+    for (const [_playerID, cardZone] of this.gameState.playerHands) {
       //TODO: also add any cards that might be in the cardzone here? should initialize with no cards though since the gamestate starts with everything in the deck
       const newHandView = this.add.existing(
         new HandView(this, cardZone.zonePosition)
@@ -93,32 +136,80 @@ export class Game extends Scene {
       const card = this.gameState.GetCardFromId(id);
       if (card) {
         const newCardView = this.add.existing(new CardView(this, card));
-        this.gameLayer.add(newCardView);
+        this.animationController.animationLayer.add(newCardView);
         this.input.setDraggable(newCardView);
         this.cardViewMap.set(id, newCardView);
         this.deckView.AddCardView(newCardView);
+        newCardView.Flip(true);
         newCardView.setPosition(
           newCardView.GetTargetPos().x,
           newCardView.GetTargetPos().y
         );
       }
     }
-    // this.ApplyChange(this.gameState.MoveAllCardsToDeck());
+
+    this.ChangeState(TurnState.Idle);
     const maybeSaveData = localStorage.getItem("saveData");
     if (maybeSaveData) {
       console.log("found save game");
-      console.log(JSON.parse(maybeSaveData));
-      const gameChange = this.gameState.loadFromJson(JSON.parse(maybeSaveData));
-      this.ApplyChange(gameChange);
+
       if (this.gameState.IsGameOver()) {
-        this.DealNewGame();
+        this.DealNewGame().then((gameChange) => {
+          console.log("new game is dealt because game was over");
+          this.ChangeState(TurnState.Player);
+        });
+      } else {
+        const gameChange = this.gameState.loadFromJson(
+          JSON.parse(maybeSaveData)
+        );
+        const initialState =
+          this.gameState.GetPlayerTurn() == playerNumber
+            ? TurnState.Player
+            : TurnState.NPC;
+        Util.WaitUntilTweensFinish(
+          this.ApplyChange(gameChange)!.GetTweens()
+        ).then(() => {
+          this.ChangeState(initialState);
+        });
       }
     } else {
-      this.ApplyChange(this.gameState.DealCards());
-      this.ApplyChange(this.gameState.InitialTableCards());
+      this.DealNewGame().then(() => {
+        this.ChangeState(TurnState.Player);
+        console.log("new game is dealt because game no save was found");
+      });
     }
+    //game is loaded
   }
 
+  ChangeState(newState: TurnState) {
+    console.log("changing state to : " + newState);
+    switch (newState) {
+      case TurnState.Player:
+        break;
+      case TurnState.NPC:
+        const playerTurn = this.gameState.GetPlayerTurn();
+        console.assert(
+          playerTurn != playerNumber,
+          `NPC state should not be entered when player turn is ${playerTurn}!`
+        );
+        setTimeout(() => {
+          const bestMoveAction = this.PlayMoveForPlayer(playerTurn);
+          if (bestMoveAction) {
+            bestMoveAction.then((gameChange) => {
+              if (gameChange.toPlayer == playerNumber) {
+                this.ChangeState(TurnState.Player);
+              } else {
+                this.ChangeState(TurnState.NPC);
+              }
+            });
+          }
+        }, 500);
+
+        break;
+    }
+
+    this.turnState = newState;
+  }
   GetLastPersonToScoopCards() {
     for (let i = this.history.length - 1; i >= 0; i--) {
       const gameChange = this.history[i];
@@ -142,7 +233,7 @@ export class Game extends Scene {
   ApplyChange(gameChange: GameChange | null) {
     if (gameChange == null) {
       console.log("game change is null, nothing to apply");
-      return;
+      return null;
     }
     for (const cardMove of gameChange.GetMoves()) {
       const cardView = this.cardViewMap.get(cardMove.card.id());
@@ -160,12 +251,13 @@ export class Game extends Scene {
       //also updates the target rects of the cards since
       fromZone.RemoveCardView(cardView);
       toZone.AddCardView(cardView);
-      this.gameLayer.bringToTop(this.cardViewMap.get(cardMove.card.id())!);
     }
-    this.animationController.AnimateGameChange(gameChange, this.gameState);
 
-    console.log(`current player turn: ${this.gameState.GetPlayerTurn()}`);
     localStorage.setItem("saveData", JSON.stringify(this.gameState.toJson()));
+    const animationResult =
+      this.animationController.AnimateGameChange(gameChange);
+    this.animationController.ResetCardAngles(this.gameState);
+    return animationResult;
   }
 
   Undo() {
@@ -199,8 +291,7 @@ export class Game extends Scene {
     return poppedMove;
   }
 
-  DealNewGame() {
-    //I need to break this out into a gamestate function so I can also modify the player turn in it!!!, right now I just modify it inside of dealchange since so far that is true
+  async DealNewGame(): Promise<GameChange> {
     if (this.newGameDealTimeline) {
       this.newGameDealTimeline.stop();
     }
@@ -208,84 +299,114 @@ export class Game extends Scene {
     const moveToDeckChange = this.gameState.MoveAllCardsToDeck();
     const dealChange = this.gameState.DealCards();
     const initialDeal = this.gameState.InitialTableCards();
-    // this.AddToHistory(moveToDeckChange);
-    // this.AddToHistory(dealChange.Copy().Append(initialDeal));
-    // this.AddToHistory(initialDeal);
-    //I would Like to do this...
+
     const gameChange = new GameChange(0, playerAtEndOfLastGame, 0);
     gameChange.Append(
       moveToDeckChange.Copy().Append(dealChange).Append(initialDeal)
     );
     this.AddToHistory(gameChange);
 
-    this.newGameDealTimeline = this.add.timeline([
-      {
-        at: 0,
-        run: () => {
-          this.ApplyChange(moveToDeckChange);
-        },
-      },
-      {
-        at: 500,
-        run: () => {
-          this.ApplyChange(dealChange);
-        },
-      },
-      {
-        at: 1000,
-        run: () => {
-          this.ApplyChange(initialDeal);
-        },
-      },
-    ]);
-    this.newGameDealTimeline.play();
+    return new Promise((resolve) => {
+      this.newGameDealTimeline = this.add
+        .timeline([
+          {
+            at: 0,
+            run: () => {
+              this.ApplyChange(moveToDeckChange);
+            },
+          },
+          {
+            at: 500,
+            run: () => {
+              this.ApplyChange(initialDeal);
+            },
+          },
+          {
+            at: 1000,
+            run: () => {
+              const finalDeal = this.ApplyChange(dealChange);
+              Util.WaitUntilTweensFinish(finalDeal!.GetTweens()).then(() => {
+                resolve(gameChange);
+              });
+            },
+          },
+        ])
+        .play();
+    });
   }
-  AttemptMoveCardToTable(cardId: CardId): GameChange | null {
-    this.gameLayer.add(this.cardViewMap.get(cardId)!);
+
+  AttemptMoveCardToTable(cardId: CardId): Promise<GameChange> {
     const gameChange = this.gameState.MoveCard(
       cardId,
       new ZonePosition(CardZoneID.TABLE, 0)
     );
     if (gameChange) {
-      console.log("successful board move!!!");
-      if (this.gameState.table.GetCards().length == 0) {
-      }
-      this.AddToHistory(gameChange);
-      this.ApplyChange(gameChange);
-      //end game anim
-      if (this.gameState.IsGameOver()) {
-        console.log("GAME OVER!!!");
-        const lastPlayerToScoop = this.GetLastPersonToScoopCards();
-        const endGameMove = this.gameState.MoveTableCardsToPlayerPile(
-          lastPlayerToScoop || 0
-        );
-        console.assert(
-          lastPlayerToScoop != null,
-          "last player to scoop should not be null moving end game cards to player 0"
-        );
-        console.log("endgame move: " + endGameMove.toString());
-        //this might suck, revisionist history smh
-        const lastPlay = this.history.pop()!;
-        lastPlay.Append(endGameMove);
-        this.AddToHistory(lastPlay);
-        // this should be like a special call in Animation controller I think
-        if (endGameMove.GetMoves().length > 0) {
-          this.add
-            .timeline({
-              at: 1000,
-              run: () => {
-                console.log("apply change final board move");
-                this.ApplyChange(endGameMove);
-              },
-            })
-            .play();
+      return new Promise((resolve) => {
+        console.log("successful board move!!!");
+        if (this.gameState.table.GetCards().length == 0) {
         }
-      }
+        this.AddToHistory(gameChange);
+        const cardMoveAnimResult = this.ApplyChange(gameChange);
+        //end game anim
+        if (this.gameState.IsGameOver()) {
+          console.log("GAME OVER!!!");
+          const lastPlayerToScoop = this.GetLastPersonToScoopCards();
+          const endGameMove = this.gameState.MoveTableCardsToPlayerPile(
+            lastPlayerToScoop || 0
+          );
+          console.assert(
+            lastPlayerToScoop != null,
+            "last player to scoop should not be null moving end game cards to player 0"
+          );
+          console.log("endgame move: " + endGameMove.toString());
+          //this might suck, revisionist history smh
+          const lastPlay = this.history.pop()!;
+          lastPlay.Append(endGameMove);
+          this.AddToHistory(lastPlay);
+          // this should be like a special call in Animation controller I think
+          if (endGameMove.GetMoves().length > 0) {
+            this.add
+              .timeline({
+                at: 1000,
+                run: () => {
+                  console.log("apply change final board move");
+                  Util.WaitUntilTweensFinish(
+                    this.ApplyChange(endGameMove)!.GetTweens()
+                  ).then(() => resolve(lastPlay));
+                },
+              })
+              .play();
+          }
+        } else {
+          //return the card to where it started from
+          Util.WaitUntilTweensFinish(cardMoveAnimResult!.GetTweens()).then(
+            () => {
+              resolve(gameChange);
+            }
+          );
+        }
+      });
+    } else {
+      const card = this.gameState.GetCardFromId(cardId)!;
+      const gameChange = this.gameState.ReturnCardToStartingLocation(card);
+      return Util.WaitUntilTweensFinish(
+        this.ApplyChange(gameChange)!.GetTweens()
+      ).then(() => {
+        return gameChange;
+      });
     }
-    return gameChange;
   }
   IgnoreInput() {
     return this.animationController.CardsMoving();
+  }
+  PlayMoveForPlayer(playerNum: number) {
+    const bestMove = this.gameState.GetBestCardToPlayForPlayer(playerNum);
+    if (bestMove) {
+      return this.AttemptMoveCardToTable(bestMove);
+    }
+    console.log("no best move found...");
+
+    return null;
   }
   initializeInput() {
     let dragStartTime: null | number = null;
@@ -305,27 +426,28 @@ export class Game extends Scene {
       console.log(result.toString());
     });
     this.input.keyboard!.on("keydown-P", () => {
-      const currentPlayerTurn = this.gameState.GetPlayerTurn();
-      const bestMove =
-        this.gameState.GetBestCardToPlayForPlayer(currentPlayerTurn);
-      if (bestMove) {
-        this.AttemptMoveCardToTable(bestMove);
-      } else {
-        console.log("no best move found");
+      const maybeMove = this.PlayMoveForPlayer(this.gameState.GetPlayerTurn());
+      if (maybeMove) {
+        maybeMove.then((gameChange) => {
+          this.ChangeState(
+            gameChange.toPlayer == playerNumber
+              ? TurnState.Player
+              : TurnState.NPC
+          );
+        });
       }
     });
     this.input.keyboard!.on("keydown-N", () => {
-      //newgame
-
-      this.DealNewGame();
+      this.DealNewGame().then((gameChange) => {
+        this.ChangeState(
+          gameChange.toPlayer == playerNumber ? TurnState.Player : TurnState.NPC
+        );
+      });
     });
 
     this.input.on(
       Phaser.Input.Events.POINTER_OVER,
-      (
-        pointer: Phaser.Input.Pointer,
-        justOver: Phaser.GameObjects.GameObject[]
-      ) => {
+      (_: Phaser.Input.Pointer, justOver: Phaser.GameObjects.GameObject[]) => {
         //was it a card?
         const cardOver = this.GetCardFromGameObject(justOver[0]);
         if (cardOver) {
@@ -342,12 +464,6 @@ export class Game extends Scene {
               duration: 400,
               ease: Phaser.Math.Easing.Back.Out,
             });
-          } else if (cardOver.currentZone.id == CardZoneID.PILE) {
-            console.log(
-              this.gameState
-                .GetCardZoneFromPosition(cardOver.currentZone)
-                ?.toString()
-            );
           }
         }
       }
@@ -355,14 +471,14 @@ export class Game extends Scene {
     this.input.on(
       Phaser.Input.Events.POINTER_OUT,
       (
-        pointer: Phaser.Input.Pointer,
+        _pointer: Phaser.Input.Pointer,
         justOut: Phaser.GameObjects.GameObject[]
       ) => {
         //was it a card?
         const cardOver = this.GetCardFromGameObject(justOut[0]);
         if (cardOver) {
           const cardView = this.cardViewMap.get(cardOver.id())!;
-          this.animationController.ResetTableCardAngles(this.gameState);
+          this.animationController.ResetCardAngles(this.gameState);
           if (cardOver.currentZone.id == CardZoneID.HAND) {
             this.add.tween({
               targets: justOut[0],
@@ -377,11 +493,15 @@ export class Game extends Scene {
     this.input.on(
       Phaser.Input.Events.DRAG_START,
       (
-        pointer: Phaser.Input.Pointer,
+        _pointer: Phaser.Input.Pointer,
         gameObject: Phaser.GameObjects.GameObject
       ) => {
+        if (this.turnState != TurnState.Player) {
+          console.log("IT IS NOT YOUR TURN!!!!!!!");
+          return;
+        }
         dragStartTime = this.time.now;
-        this.animationController.ResetTableCardAngles(this.gameState);
+        this.animationController.ResetCardAngles(this.gameState);
         for (const [id, cardView] of this.cardViewMap) {
           if (cardView == gameObject) {
             this.heldCardId = id;
@@ -396,8 +516,8 @@ export class Game extends Scene {
     this.input.on(
       Phaser.Input.Events.DRAG_ENTER,
       (
-        pointer: Phaser.Input.Pointer,
-        gameObject: Phaser.GameObjects.GameObject,
+        _pointer: Phaser.Input.Pointer,
+        _gameObject: Phaser.GameObjects.GameObject,
         target: Phaser.GameObjects.GameObject
       ) => {
         if (target == this.tableView.dropZone) {
@@ -413,8 +533,8 @@ export class Game extends Scene {
     this.input.on(
       Phaser.Input.Events.DRAG_LEAVE,
       (
-        pointer: Phaser.Input.Pointer,
-        gameObject: Phaser.GameObjects.GameObject,
+        _pointer: Phaser.Input.Pointer,
+        _gameObject: Phaser.GameObjects.GameObject,
         target: Phaser.GameObjects.GameObject
       ) => {
         if (target == this.tableView.dropZone) {
@@ -433,8 +553,8 @@ export class Game extends Scene {
     this.input.on(
       "drag",
       (
-        pointer: Phaser.Input.Pointer,
-        gameObject: Phaser.GameObjects.GameObject,
+        _pointer: Phaser.Input.Pointer,
+        _gameObject: Phaser.GameObjects.GameObject,
         dragX: number,
         dragY: number
       ) => {
@@ -450,19 +570,26 @@ export class Game extends Scene {
       if (this.heldCardId) {
         const card = this.gameState.GetCardFromId(this.heldCardId)!;
         const gameChange = this.gameState.ReturnCardToStartingLocation(card);
-        this.gameLayer.add(this.cardViewMap.get(this.heldCardId)!);
         console.log("applying game change of just dropping the cad");
-        this.ApplyChange(gameChange);
+        this.animationController.animationLayer.add(
+          this.cardViewMap.get(card.id())
+        );
+
         this.heldCardId = null;
+        return Util.WaitUntilTweensFinish(
+          this.ApplyChange(gameChange)!.GetTweens()
+        );
       }
+      return null;
     };
+    //this will happen after drop, so the held card may be null
     this.input.on(
       Phaser.Input.Events.DRAG_END,
       (
-        pointer: Phaser.Input.Pointer,
-        gameObject: Phaser.GameObjects.GameObject,
-        dragX: number,
-        dragY: number
+        _pointer: Phaser.Input.Pointer,
+        _gameObject: Phaser.GameObjects.GameObject,
+        _dragX: number,
+        _dragY: number
       ) => {
         if (this.heldCardId) {
           if (dragStartTime) {
@@ -471,9 +598,13 @@ export class Game extends Scene {
             //maybe check the distance traveled here
             if (dragTime < 300) {
               //register as a click
-              if (!this.AttemptMoveCardToTable(this.heldCardId)) {
-                returnHeldCard();
-              }
+              this.AttemptMoveCardToTable(this.heldCardId).then((gameChange) =>
+                this.ChangeState(
+                  gameChange.toPlayer == playerNumber
+                    ? TurnState.Player
+                    : TurnState.NPC
+                )
+              );
             } else {
               returnHeldCard();
             }
@@ -485,88 +616,43 @@ export class Game extends Scene {
         }
       }
     );
-    this.input.on(
-      "dragenter",
-      function (
-        pointer: Phaser.Input.Pointer,
-        gameObject: Phaser.GameObjects.GameObject,
-        dropzone: Phaser.GameObjects.GameObject
-      ) {
-        console.log("drag enter");
-      }
-    );
+    // this.input.on(
+    //   "dragenter",
+    //   function (
+    //     _pointer: Phaser.Input.Pointer,
+    //     _gameObject: Phaser.GameObjects.GameObject,
+    //     _dropzone: Phaser.GameObjects.GameObject
+    //   ) {
+    //     console.log("drag enter");
+    //   }
+    // );
 
     this.input.on(
       Phaser.Input.Events.DROP,
       async (
-        pointer: Phaser.Input.Pointer,
-        gameObject: Phaser.GameObjects.GameObject,
+        _pointer: Phaser.Input.Pointer,
+        _gameObject: Phaser.GameObjects.GameObject,
         dropzone: Phaser.GameObjects.GameObject
       ) => {
         if (this.heldCardId) {
           if (dropzone == this.tableView.dropZone) {
-            const gameChange = this.AttemptMoveCardToTable(this.heldCardId);
-            if (gameChange) {
-              this.heldCardId = null;
-            } else {
-              console.log(
-                "cannot do a move with that drop, not setting held card to null"
+            this.animationController.animationLayer.add(
+              this.cardViewMap.get(this.heldCardId)!
+            );
+            this.AttemptMoveCardToTable(this.heldCardId).then((gameChange) => {
+              this.ChangeState(
+                gameChange.toPlayer == playerNumber
+                  ? TurnState.Player
+                  : TurnState.NPC
               );
-            }
+            });
+            this.heldCardId = null;
           }
         }
       }
     );
   }
 
-  onMouseDown() {}
-  onMouseDrag() {}
-  onMouseUp() {}
-
-  //am I able to get the target rect of any card just by looking at the gamestate???
-  //this doesn't work if I want to update the gamestate multiple times, get those game changes, and then animate the game changes separately (like animate to deck, the redeal. I want to move cards to deck then move to hands in the state immediately, but I don't want to animate all that simultaneously (since it would only animate the cards to their final positions.))
-  //idea is that you ask the cardzone the card currently belongs to, based on it's state, where it should put the card we're talking about
-  // private GetCardTargetPosition(cardID: CardId): Phaser.Math.Vector2 | null {
-  //   const card = this.gameState.GetCardFromId(cardID) ?? null;
-  //   if (card == null) {
-  //     console.warn(`couldn't find a card with the id ${cardID}`);
-  //     return null;
-  //   }
-  //   const toCardZone = this.gameState.GetCardZoneFromPosition(card.currentZone);
-  //   if (toCardZone == null) return null;
-  //   switch (card.currentZone.id) {
-  //     case CardZoneID.DECK:
-  //       return new Phaser.Math.Vector2(80, 80);
-  //     case CardZoneID.HAND:
-  //       const offset = toCardZone
-  //         .GetCards()
-  //         .findIndex((card) => card.id() == cardID);
-  //       const view = this.handViews.get(card.currentZone.index);
-  //       if (offset >= 0) {
-  //         return view!
-  //           .GetPosition()
-  //           .add(new Phaser.Math.Vector2(offset * 40, 0));
-  //       } else {
-  //         console.error(
-  //           "card not found in the cardzone found with position " +
-  //             card.currentZone.toString()
-  //         );
-  //         return null;
-  //       }
-  //     case CardZoneID.PILE:
-  //       return this.GetPilePosition(card.currentZone.index);
-  //     case CardZoneID.TABLE:
-  //       let slotNum = 0;
-  //       for (let [key, value] of this.slopMap) {
-  //         if (value === cardID) {
-  //           slotNum = key;
-  //         }
-  //       }
-  //       const offsetX = (slotNum % 2) * 150;
-  //       const offsetY = Math.floor(slotNum / 2) * 60;
-  //       return new Phaser.Math.Vector2(512 + offsetX - 60, 384 + offsetY);
-  //   }
-  // }
   //todo make some actual views
   GetCardZoneViewFromZonePosition(zonePosition: ZonePosition): ICardZoneView {
     switch (zonePosition.id) {

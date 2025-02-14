@@ -8,11 +8,18 @@ class GameChange {
   playerTurn: number;
   fromPlayer: number;
   toPlayer: number;
+  isNewGame: boolean;
   scoopResults: ScoopResult[] = [];
-  constructor(_playerTurn: number, _fromPlayer: number, _toPlayer: number) {
+  constructor(
+    _playerTurn: number,
+    _fromPlayer: number,
+    _toPlayer: number,
+    isNewGame?: boolean
+  ) {
     this.playerTurn = _playerTurn;
     this.fromPlayer = _fromPlayer;
     this.toPlayer = _toPlayer;
+    this.isNewGame = isNewGame ?? false;
   }
   public AddScoopResult(scoopResult: ScoopResult) {
     this.scoopResults.push(scoopResult);

@@ -32,4 +32,15 @@ export default class Util {
   static CardArrToString(arr: Card[]) {
     return `${arr.length} cards: ` + arr.map((c) => c.toString()).join(", ");
   }
+  static async WaitUntilTweensFinish(tweens: Phaser.Tweens.BaseTween[]) {
+    const tweenPromises = tweens.map(
+      (tween) =>
+        new Promise<void>((resolve) => {
+          tween.once("complete", resolve);
+          tween.once("stop", resolve);
+        })
+    );
+    // Wait for all tweens to complete
+    await Promise.all(tweenPromises);
+  }
 }

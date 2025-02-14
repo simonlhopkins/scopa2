@@ -39,30 +39,13 @@ class HandView extends Phaser.GameObjects.Container implements ICardZoneView {
     return this.cardViews;
   }
 
-  ScaleUp(delay: number) {
+  ScaleUp() {
     this.cardViews.forEach((cardView) => {
-      // this.scene.add.tween({
-      //   targets: cardView,
-      //   scaleX: 1.5,
-      //   scaleY: 1.5,
-      //   duration: 300,
-      //   delay,
-      //   ease: Phaser.Math.Easing.Back.Out,
-      // });
-      console.log("setting target scale to 1.5");
       cardView.SetTargetScale(1.5, 1.5);
     });
   }
   ScaleDown() {
     this.cardViews.forEach((cardView) => {
-      // this.scene.add.tween({
-      //   targets: cardView,
-      //   scaleX: 1,
-      //   scaleY: 1,
-      //   duration: 300,
-      //   ease: Phaser.Math.Easing.Back.Out,
-      // });
-      console.log("setting target scale to 1");
       cardView.SetTargetScale(1, 1);
     });
   }
