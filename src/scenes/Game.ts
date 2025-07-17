@@ -2,14 +2,15 @@ import { Scene } from "phaser";
 import { CardZoneID, ZonePosition } from "../Game/CardZone";
 import GameChange from "../Game/GameChange";
 import GameState from "../Game/GameState";
-import Card, { CardId } from "../Game/Card";
+import { CardId } from "../Game/Card";
 import TableView from "../Views/TableView";
 import HandView from "../Views/HandView";
 import CardView from "../Views/CardView";
 import DeckView from "../Views/DeckView";
 import PileView from "../Views/PileView";
 import ICardZoneView from "../Views/ICardZoneView";
-import AnimationController from "../AnimationController";
+import AnimationController from "../Animation/AnimationController";
+import AnimationContext from "../Animation/AnimationContext.ts";
 
 export class Game extends Scene {
   camera: Phaser.Cameras.Scene2D.Camera;
@@ -109,7 +110,9 @@ export class Game extends Scene {
       console.log("found save game");
       console.log(JSON.parse(maybeSaveData));
       const gameChange = this.gameState.loadFromJson(JSON.parse(maybeSaveData));
-      this.ApplyChange(gameChange);
+      const context = new AnimationContext();
+      context.instant = true;
+      this.ApplyChange(gameChange, context);
       if (this.gameState.IsGameOver()) {
         this.DealNewGame();
       }
@@ -139,7 +142,7 @@ export class Game extends Scene {
 
   //problem, this only will update the position of the cards that are involved in the GameChange, so, for example, if you remove a card from the middle of a card[], and move it somewhere, you might expect that it would shift all the cards above it over, but it currently does not.
   // I could keep track of all of the views effected by the gameChange, and then do a manual recalculation of all of the card positions or something
-  ApplyChange(gameChange: GameChange | null) {
+  ApplyChange(gameChange: GameChange | null, animationContext: AnimationContext|null = null) {
     if (gameChange == null) {
       console.log("game change is null, nothing to apply");
       return;
@@ -162,7 +165,7 @@ export class Game extends Scene {
       toZone.AddCardView(cardView);
       this.gameLayer.bringToTop(this.cardViewMap.get(cardMove.card.id())!);
     }
-    this.animationController.AnimateGameChange(gameChange, this.gameState);
+    this.animationController.AnimateGameChange(gameChange, this.gameState, animationContext);
 
     console.log(`current player turn: ${this.gameState.GetPlayerTurn()}`);
     localStorage.setItem("saveData", JSON.stringify(this.gameState.toJson()));
@@ -362,8 +365,8 @@ export class Game extends Scene {
         const cardOver = this.GetCardFromGameObject(justOut[0]);
         if (cardOver) {
           const cardView = this.cardViewMap.get(cardOver.id())!;
-          this.animationController.ResetTableCardAngles(this.gameState);
           if (cardOver.currentZone.id == CardZoneID.HAND) {
+            this.animationController.ResetTableCardAngles(this.gameState);
             this.add.tween({
               targets: justOut[0],
               y: cardView.GetTargetPos().y,
@@ -418,7 +421,7 @@ export class Game extends Scene {
         target: Phaser.GameObjects.GameObject
       ) => {
         if (target == this.tableView.dropZone) {
-          console.log("card over table!!!");
+          console.log("drag leave table");
           for (const card of this.gameState.table.GetCards()) {
             this.add.tween({
               targets: this.cardViewMap.get(card.id())!,
@@ -491,9 +494,7 @@ export class Game extends Scene {
         pointer: Phaser.Input.Pointer,
         gameObject: Phaser.GameObjects.GameObject,
         dropzone: Phaser.GameObjects.GameObject
-      ) {
-        console.log("drag enter");
-      }
+      ) {}
     );
 
     this.input.on(

@@ -1,10 +1,11 @@
-import { CardId } from "./Game/Card";
-import { CardZoneID, ZonePosition } from "./Game/CardZone";
-import GameChange, { CardMove } from "./Game/GameChange";
-import GameState from "./Game/GameState";
-import CardView from "./Views/CardView";
-import HandView from "./Views/HandView";
-import ICardZoneView from "./Views/ICardZoneView";
+import { CardId } from "../Game/Card";
+import { CardZoneID, ZonePosition } from "../Game/CardZone";
+import GameChange, { CardMove } from "../Game/GameChange";
+import GameState from "../Game/GameState";
+import CardView from "../Views/CardView";
+import HandView from "../Views/HandView";
+import ICardZoneView from "../Views/ICardZoneView";
+import AnimationContext from "./AnimationContext.ts";
 
 async function WaitUntilTweensFinish(tweens: Phaser.Tweens.Tween[]) {
   const tweenPromises = tweens.map(
@@ -72,6 +73,14 @@ class AnimationController {
   ForceCompleteTweensOnGameObject(gameObject: Phaser.GameObjects.GameObject) {
     const tweens = this.scene.tweens.getTweensOf(gameObject);
     tweens.forEach((tween) => tween.complete());
+  }
+  ForceCompleteTweensOnCard(cardId: CardId) {
+    const cardView = this.cardViewMap.get(cardId);
+    if (cardView) {
+      this.ForceCompleteTweensOnGameObject(cardView);
+    } else {
+      console.warn(`Card with ID ${cardId} not found in cardViewMap.`);
+    }
   }
 
   IsTweening(gameObject: Phaser.GameObjects.GameObject) {
@@ -177,7 +186,18 @@ class AnimationController {
       console.log("no scoop card!!!");
     }
   }
-  AnimateGameChange(gameChange: GameChange, gameState: GameState) {
+  private MoveAllCardsToTargetPos(gameChange: GameChange){
+    gameChange
+      .GetMoves()
+      .map((move) => this.cardViewMap.get(move.card.id())!)
+      .forEach((cardView) => {
+        cardView.setPosition(cardView.GetTargetPos().x, cardView.GetTargetPos().y);
+        cardView.setScale(cardView.GetTargetScale().x, cardView.GetTargetScale().y);
+      });
+  }
+  AnimateGameChange(gameChange: GameChange, gameState: GameState, context:AnimationContext| null = null) {
+    
+    
     //separate out the moves that go to piles!
     gameChange
       .GetMoves()
@@ -352,8 +372,17 @@ class AnimationController {
     }
 
     this.ResetTableCardAngles(gameState);
+
+    // if(context && context.instant) {
+    //   //if we are in instant mode, just skip all the animations
+    //   gameChange.GetCardIds().forEach(id=>{
+    //     this.ForceCompleteTweensOnCard(id);
+    //   })
+    //   return;
+    // }
   }
   ResetTableCardAngles(gameState: GameState) {
+    console.log("Resetting table card angles");
     for (const card of gameState.table.GetCards()) {
       this.scene.add.tween({
         targets: this.cardViewMap.get(card.id())!,

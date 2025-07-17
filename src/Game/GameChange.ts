@@ -26,6 +26,12 @@ class GameChange {
   public GetMoves() {
     return this.cardMoves;
   }
+  public GetCardViews(){
+    return this.cardMoves.map((move) => move.card);
+  }
+  public GetCardIds(){
+    return this.cardMoves.map((move) => move.card.id());
+  }
   public Append(gameChange: GameChange) {
     this.cardMoves = this.cardMoves.concat(gameChange.GetMoves());
     return this;
