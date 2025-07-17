@@ -1,8 +1,9 @@
 import serializeJavascript from "serialize-javascript";
 import Card, { CardId, Suit } from "./Card";
 import CardZone, { CardZoneID, ZonePosition } from "./CardZone";
-import GameChange, { CardMove } from "./GameChange";
+import GameChange from "./GameChange";
 import Util from "../Util";
+import CardMove from "./CardMove.ts";
 
 export interface ScoopResult {
   handCard: Card;
@@ -121,13 +122,14 @@ class GameState {
       this.playerTurn,
       this.playerTurn
     );
+    
     const backToDeck = this.GetCardIds().map((cardID) =>
       this.deck.PushTop(
         this.GetCardZoneFromPosition(
           this.GetCardFromId(cardID)!.currentZone
         )!.TakeCard(this.GetCardFromId(cardID)!)!
-      )
-    );
+      ).flipFaceDown()
+    )
     gameChange.AddMoves(backToDeck);
     return gameChange;
   }
@@ -194,7 +196,7 @@ class GameState {
     for (let i = 0; i < 4; i++) {
       const card = this.deck.TakeTop();
       if (card) {
-        gameChange.AddMove(this.table.PushTop(card));
+        gameChange.AddMove(this.table.PushTop(card).flipFaceUp());
       }
     }
     return gameChange;
@@ -207,7 +209,7 @@ class GameState {
       for (let [_, value] of this.playerHands) {
         const card = this.deck.TakeTop();
         if (card) {
-          gameChange.AddMove(value.PushTop(card));
+          gameChange.AddMove(value.PushTop(card).flipFaceUp());
         }
       }
     }

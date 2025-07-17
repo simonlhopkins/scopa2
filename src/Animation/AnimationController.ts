@@ -1,11 +1,12 @@
 import { CardId } from "../Game/Card";
 import { CardZoneID, ZonePosition } from "../Game/CardZone";
-import GameChange, { CardMove } from "../Game/GameChange";
+import GameChange from "../Game/GameChange";
 import GameState from "../Game/GameState";
 import CardView from "../Views/CardView";
 import HandView from "../Views/HandView";
 import ICardZoneView from "../Views/ICardZoneView";
 import AnimationContext from "./AnimationContext.ts";
+import CardMove from "../Game/CardMove.ts";
 
 async function WaitUntilTweensFinish(tweens: Phaser.Tweens.Tween[]) {
   const tweenPromises = tweens.map(
@@ -72,7 +73,10 @@ class AnimationController {
   }
   ForceCompleteTweensOnGameObject(gameObject: Phaser.GameObjects.GameObject) {
     const tweens = this.scene.tweens.getTweensOf(gameObject);
-    tweens.forEach((tween) => tween.complete());
+    tweens.forEach((tween) => {
+      tween.seek(tween.duration);
+      tween.complete();
+    });
   }
   ForceCompleteTweensOnCard(cardId: CardId) {
     const cardView = this.cardViewMap.get(cardId);
@@ -372,14 +376,23 @@ class AnimationController {
     }
 
     this.ResetTableCardAngles(gameState);
+    gameChange.GetMoves().forEach((move => {
+      const cardView = this.cardViewMap.get(move.card.id())!;
+      if(move.getIsFaceDown()){
+        console.log(`Flipping card ${move.card.id()} face down`);
+        cardView.FlipFaceDown();
+      }else {
+        console.log(`Flipping card ${move.card.id()} face up`);
+        cardView.FlipFaceUp();
+      }
+    }));
 
-    // if(context && context.instant) {
-    //   //if we are in instant mode, just skip all the animations
-    //   gameChange.GetCardIds().forEach(id=>{
-    //     this.ForceCompleteTweensOnCard(id);
-    //   })
-    //   return;
-    // }
+    if(context && context.instant) {
+      //if we are in instant mode, just skip all the animations
+      gameChange.GetCardIds().forEach(id=>{
+        this.ForceCompleteTweensOnCard(id);
+      })
+    }
   }
   ResetTableCardAngles(gameState: GameState) {
     console.log("Resetting table card angles");

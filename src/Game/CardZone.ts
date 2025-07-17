@@ -1,6 +1,6 @@
 import Util from "../Util";
 import Card, { CardId } from "./Card";
-import { CardMove } from "./GameChange";
+import CardMove from "./CardMove.ts";
 
 export enum CardZoneID {
   DECK,

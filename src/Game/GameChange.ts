@@ -1,6 +1,7 @@
 import Card from "./Card";
 import { ZonePosition } from "./CardZone";
 import { ScoopResult } from "./GameState";
+import CardMove from "./CardMove.ts";
 
 // should be used for UI transitions as well
 class GameChange {
@@ -75,23 +76,6 @@ class GameChange {
     return str;
   }
 }
-export class CardMove {
-  card: Card;
-  fromPosition: ZonePosition;
-  toPosition: ZonePosition;
-  isScopa: boolean = false;
-  constructor(
-    _card: Card,
-    _fromPosition: ZonePosition,
-    _toPosition: ZonePosition
-  ) {
-    this.card = _card;
-    this.toPosition = _toPosition;
-    this.fromPosition = _fromPosition;
-  }
-  setScopa(isScopa: boolean) {
-    this.isScopa = isScopa;
-  }
-}
+
 
 export default GameChange;

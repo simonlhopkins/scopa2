@@ -34,7 +34,17 @@ class CardView extends Phaser.GameObjects.Container {
   GetTargetPos() {
     return this.targetPosition;
   }
-  Flip(forceFlip?: boolean) {
+  FlipFaceUp() {
+    this.cardSprite.setTexture(
+         Card.GetTextureName(this.card)
+    );
+  }
+  FlipFaceDown() {
+    this.cardSprite.setTexture(
+        "cardBack"
+    );
+  }
+  private Flip(forceFlip?: boolean) {
     if (this.isFlipped == forceFlip) return;
     this.isFlipped = forceFlip ?? !this.isFlipped;
     if (this.flipTween) {

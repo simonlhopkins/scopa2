@@ -159,6 +159,7 @@ export class Game extends Scene {
       const fromZone = this.GetCardZoneViewFromZonePosition(
         cardMove.fromPosition
       );
+      console.log(cardMove.toPosition);
       //zone view update states
       //also updates the target rects of the cards since
       fromZone.RemoveCardView(cardView);
@@ -203,6 +204,7 @@ export class Game extends Scene {
   }
 
   DealNewGame() {
+    
     //I need to break this out into a gamestate function so I can also modify the player turn in it!!!, right now I just modify it inside of dealchange since so far that is true
     if (this.newGameDealTimeline) {
       this.newGameDealTimeline.stop();
