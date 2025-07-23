@@ -4,6 +4,8 @@ import CardZone, { CardZoneID, ZonePosition } from "./CardZone";
 import GameChange from "./GameChange";
 import Util from "../Util";
 import CardMove from "./CardMove.ts";
+import CardFlip, {CardFlipAnimationContext} from "./CardFlip.ts";
+import AnimationContext from "../Animation/AnimationContext.ts";
 
 export interface ScoopResult {
   handCard: Card;
@@ -77,7 +79,9 @@ class GameState {
           new ZonePosition(CardZoneID.HAND, id)
         )!.PushTop(this.deck.TakeCard(this.GetCardFromId(card)!)!)
       );
+      const flips = cardMoves.map((move) => id == 0?move.card.flipFaceUp():move.card.flipFaceDown());
       initChange.AddMoves(cardMoves);
+      initChange.AddFlips(flips);
     }
     for (const { id, cards } of gameStateJson.piles) {
       const cardMoves = cards.map((card) =>
@@ -85,6 +89,8 @@ class GameState {
           new ZonePosition(CardZoneID.PILE, id)
         )!.PushTop(this.deck.TakeCard(this.GetCardFromId(card)!)!)
       );
+      const flips = cardMoves.map((move) => move.card.flipFaceDown());
+      initChange.AddFlips(flips);
       initChange.AddMoves(cardMoves);
     }
 
@@ -100,7 +106,7 @@ class GameState {
 
     return initChange;
   }
-  MoveTableCardsToPlayerPile(playerNum: number) {
+  MoveTableCardsToPlayerPile(playerNum: number) : GameChange {
     const gameChange = new GameChange(
       this.playerTurn,
       this.playerTurn,
@@ -116,7 +122,7 @@ class GameState {
     }
     return gameChange;
   }
-  MoveAllCardsToDeck() {
+  MoveAllCardsToDeck(): GameChange {
     const gameChange = new GameChange(
       this.playerTurn,
       this.playerTurn,
@@ -128,8 +134,9 @@ class GameState {
         this.GetCardZoneFromPosition(
           this.GetCardFromId(cardID)!.currentZone
         )!.TakeCard(this.GetCardFromId(cardID)!)!
-      ).flipFaceDown()
+      )
     )
+    gameChange.AddFlips(backToDeck.map(move=>move.card.flipFaceDown()));
     gameChange.AddMoves(backToDeck);
     return gameChange;
   }
@@ -196,7 +203,8 @@ class GameState {
     for (let i = 0; i < 4; i++) {
       const card = this.deck.TakeTop();
       if (card) {
-        gameChange.AddMove(this.table.PushTop(card).flipFaceUp());
+        gameChange.AddFlip(card.flipFaceUp())
+        gameChange.AddMove(this.table.PushTop(card));
       }
     }
     return gameChange;
@@ -206,10 +214,16 @@ class GameState {
     this.playerTurn = 0;
     for (let i = 0; i < 3; i++) {
       //TODO maybe a helper method to check if this is even possible
-      for (let [_, value] of this.playerHands) {
+      for (let [playerNum, hand] of this.playerHands) {
         const card = this.deck.TakeTop();
-        if (card) {
-          gameChange.AddMove(value.PushTop(card).flipFaceUp());
+        if (card && hand.GetCards().length<3) {
+          const move = hand.PushTop(card);
+          if(playerNum ==0){
+            gameChange.AddFlip(card.flipFaceUp());
+          }else{
+            gameChange.AddFlip(card.flipFaceDown());
+          }
+          gameChange.AddMove(move);
         }
       }
     }
@@ -261,6 +275,11 @@ class GameState {
       const toZone = this.GetCardZoneFromPosition(move.toPosition)!;
       toZone.PushTop(fromZone.TakeCard(move.card)!);
     }
+    for(const flips of gameChange.GetFlips()){
+        const card = this.GetCardFromId(flips.card.id())!;
+        card.orientation = flips.toOrientation;
+    }
+    
     this.playerTurn = gameChange.toPlayer;
   }
   //nice!!
@@ -289,7 +308,6 @@ class GameState {
           startPlayer,
           this.playerTurn
         );
-
         if (possibleScoops.length > 0) {
           //todo, establish what player is playing the card sooner so we don't have to do this
           const playerPile = this.playerPiles.get(fromZone.zonePosition.index);
@@ -299,10 +317,15 @@ class GameState {
           );
           //todo: give player option of which scoop to do if there are multiple options
           const scoopResultToPlay = possibleScoops[0];
+          //table to pile cards
           for (const tableCard of scoopResultToPlay.tableCards) {
             const cardMove = playerPile!.PushTop(
               this.table.TakeCard(tableCard)!
             );
+            const cardFlip = tableCard.flipFaceDown();
+            cardFlip.animationContext =  new CardFlipAnimationContext();
+            cardFlip.animationContext.flipAtEnd = true;
+            gameChange.AddFlip(cardFlip);
             gameChange.AddMove(cardMove);
           }
           //create a card move for the card in the hand
@@ -313,8 +336,15 @@ class GameState {
           handToPileCardMove.setScopa(this.table.GetCards().length == 0);
           gameChange.AddScoopResult(scoopResultToPlay);
           gameChange.AddMove(handToPileCardMove);
+          gameChange.AddFlip(card.flipFaceUp());
+          const cardFlip = card.flipFaceDown();
+          cardFlip.animationContext =  new CardFlipAnimationContext();
+          cardFlip.animationContext.flipAtEnd = true;
+          gameChange.AddFlip(cardFlip);
+          
         } else {
           const cardMove = this.table.PushTop(fromZone.TakeCard(card)!);
+          gameChange.AddFlip(card.flipFaceUp());
           gameChange.AddMove(cardMove);
         }
         if (
@@ -365,7 +395,7 @@ class GameState {
   }
   PrintCurrentState() {
     let str = "";
-    str += "scopa!\n";
+    str += "scopa score!\n";
     str += `Current Player turn: ${this.playerTurn}\n`;
     str += `Player Hands:\n`;
     for (const [key, value] of this.playerHands) {
@@ -379,7 +409,18 @@ class GameState {
     str += `num cards in deck: ${this.deck.GetCards().length}\n`;
     console.log(str);
   }
-
+  
+  PlayAITurn(){
+    const cardId = this.GetBestCardToPlayForPlayer(this.playerTurn);
+    if (cardId) {
+      const zonePosition = new ZonePosition(CardZoneID.TABLE, 0);
+      return this.MoveCard(cardId, zonePosition);
+    } else {
+      console.log(`player ${this.playerTurn} has no cards to play`);
+    }
+    this.PrintCurrentState();
+  }
+  
   CalculateScores() {
     //most cards
     const playerPileArr = [...this.playerPiles].map((item) => ({

@@ -2,10 +2,12 @@ import Card from "./Card";
 import { ZonePosition } from "./CardZone";
 import { ScoopResult } from "./GameState";
 import CardMove from "./CardMove.ts";
+import CardFlip from "./CardFlip.ts";
 
 // should be used for UI transitions as well
 class GameChange {
   private cardMoves: CardMove[] = [];
+  private cardFlips: CardFlip[] = [];
   playerTurn: number;
   fromPlayer: number;
   toPlayer: number;
@@ -21,11 +23,20 @@ class GameChange {
   public AddMove(move: CardMove) {
     this.cardMoves.push(move);
   }
+  public AddFlip(flip: CardFlip) {
+    this.cardFlips.push(flip);
+  }
+  public AddFlips(flip: CardFlip[]) {
+    this.cardFlips = this.cardFlips.concat(flip);
+  }
   public AddMoves(moves: CardMove[]) {
     this.cardMoves = this.cardMoves.concat(moves);
   }
   public GetMoves() {
     return this.cardMoves;
+  }
+  public GetFlips() {
+    return this.cardFlips;
   }
   public GetCardViews(){
     return this.cardMoves.map((move) => move.card);
@@ -35,11 +46,13 @@ class GameChange {
   }
   public Append(gameChange: GameChange) {
     this.cardMoves = this.cardMoves.concat(gameChange.GetMoves());
+    this.cardFlips = this.cardFlips.concat(gameChange.GetFlips());
     return this;
   }
   public Copy() {
     const ret = new GameChange(this.playerTurn, this.fromPlayer, this.toPlayer);
     ret.AddMoves(this.GetMoves());
+    ret.AddFlips(this.GetFlips());
     return ret;
   }
   Reverse() {
@@ -49,14 +62,17 @@ class GameChange {
       this.fromPlayer
     );
     const reversedMoves = [...this.GetMoves()].reverse();
+    const reversedFlips = [...this.GetFlips()].reverse();
     for (const move of reversedMoves) {
-      const reversedMove = new CardMove(
-        move.card,
-        move.toPosition,
-        move.fromPosition
+      reversedGameChange.AddMove(move.reverse());
+    }
+    for (const flip of reversedFlips) {
+      const reversedFlip = new CardFlip(
+        flip.card,
+        flip.toOrientation,
+        flip.fromOrientation
       );
-
-      reversedGameChange.AddMove(reversedMove);
+      reversedGameChange.AddFlip(reversedFlip);
     }
     return reversedGameChange;
   }
@@ -73,6 +89,12 @@ class GameChange {
           }. ${cardMove.card.toString()} moved from ${cardMove.fromPosition!.toString()} to ${cardMove.toPosition!.toString()}\n`
       )
       .join("");
+    str += this.cardFlips
+        .map(
+            (cardFlip, i) =>
+            `\t${i + 1}. ${cardFlip.card.toString()} flipped from ${cardFlip.fromOrientation} to ${cardFlip.toOrientation}\n`
+        )
+        .join("");
     return str;
   }
 }

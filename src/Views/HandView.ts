@@ -29,7 +29,6 @@ class HandView extends Phaser.GameObjects.Container implements ICardZoneView {
   private setCardTargetPositions() {
     for (let i = 0; i < this.cardViews.length; i++) {
       this.cardViews[i].SetTargetPosition(this.x + i * 40, this.y);
-      this.cardViews[i].setDepth(i);
     }
   }
   GetPosition(): Phaser.Math.Vector2 {
@@ -41,28 +40,11 @@ class HandView extends Phaser.GameObjects.Container implements ICardZoneView {
 
   ScaleUp(delay: number) {
     this.cardViews.forEach((cardView) => {
-      // this.scene.add.tween({
-      //   targets: cardView,
-      //   scaleX: 1.5,
-      //   scaleY: 1.5,
-      //   duration: 300,
-      //   delay,
-      //   ease: Phaser.Math.Easing.Back.Out,
-      // });
-      console.log("setting target scale to 1.5");
       cardView.SetTargetScale(1.5, 1.5);
     });
   }
   ScaleDown() {
     this.cardViews.forEach((cardView) => {
-      // this.scene.add.tween({
-      //   targets: cardView,
-      //   scaleX: 1,
-      //   scaleY: 1,
-      //   duration: 300,
-      //   ease: Phaser.Math.Easing.Back.Out,
-      // });
-      console.log("setting target scale to 1");
       cardView.SetTargetScale(1, 1);
     });
   }

@@ -11,6 +11,8 @@ import PileView from "../Views/PileView";
 import ICardZoneView from "../Views/ICardZoneView";
 import AnimationController from "../Animation/AnimationController";
 import AnimationContext from "../Animation/AnimationContext.ts";
+import GameStateHelpers from "../Game/GameStateHelpers.ts";
+import Timeline = Phaser.Time.Timeline;
 
 export class Game extends Scene {
   camera: Phaser.Cameras.Scene2D.Camera;
@@ -32,7 +34,7 @@ export class Game extends Scene {
 
   //I should move these out into something else maybe
   newGameDealTimeline: null | Phaser.Time.Timeline = null;
-
+  aiTurnTimoutId:number|null = null;
   // cardZoneViews: Map<ZonePosition, >
   constructor() {
     super("Game");
@@ -57,6 +59,8 @@ export class Game extends Scene {
     //should make a map of zone position to zone views
     this.dragLayer = this.add.layer().setDepth(1);
     this.gameLayer = this.add.layer().setDepth(0);
+
+    this.animationController.Create(this.gameLayer);
 
     this.tableView = this.add.existing(new TableView(this));
     this.gameLayer.add(this.tableView);
@@ -108,10 +112,10 @@ export class Game extends Scene {
     const maybeSaveData = localStorage.getItem("saveData");
     if (maybeSaveData) {
       console.log("found save game");
-      console.log(JSON.parse(maybeSaveData));
       const gameChange = this.gameState.loadFromJson(JSON.parse(maybeSaveData));
       const context = new AnimationContext();
       context.instant = true;
+      
       this.ApplyChange(gameChange, context);
       if (this.gameState.IsGameOver()) {
         this.DealNewGame();
@@ -120,6 +124,7 @@ export class Game extends Scene {
       this.ApplyChange(this.gameState.DealCards());
       this.ApplyChange(this.gameState.InitialTableCards());
     }
+    this.OnPlayerTurnChange();
   }
 
   GetLastPersonToScoopCards() {
@@ -139,44 +144,51 @@ export class Game extends Scene {
     }
     return null;
   }
-
-  //problem, this only will update the position of the cards that are involved in the GameChange, so, for example, if you remove a card from the middle of a card[], and move it somewhere, you might expect that it would shift all the cards above it over, but it currently does not.
-  // I could keep track of all of the views effected by the gameChange, and then do a manual recalculation of all of the card positions or something
+  OnPlayerTurnChange(){
+    if(this.gameState.GetPlayerTurn()!=0){
+      this.aiTurnTimoutId = setTimeout(()=>{
+        const aiTurn = this.gameState.PlayAITurn();
+        if(aiTurn){
+          this.AddToHistory(aiTurn);
+          this.ApplyChange(aiTurn);
+        }
+      }, 2000)
+    }
+  }
+  
+  
   ApplyChange(gameChange: GameChange | null, animationContext: AnimationContext|null = null) {
     if (gameChange == null) {
       console.log("game change is null, nothing to apply");
       return;
     }
+    
     for (const cardMove of gameChange.GetMoves()) {
       const cardView = this.cardViewMap.get(cardMove.card.id());
-      if (cardView == undefined) {
-        console.error(
-          "trying to move a card that doesn't exist in the card map"
-        );
-        continue;
+      if (cardView) {
+        this.GetCardZoneViewFromZonePosition(cardMove.fromPosition).RemoveCardView(cardView);
+        this.GetCardZoneViewFromZonePosition(cardMove.toPosition).AddCardView(cardView);
+      }else{
+        console.error(`couldn't find card view for card ${cardMove.card.id()}`);
       }
-      const toZone = this.GetCardZoneViewFromZonePosition(cardMove.toPosition);
-      const fromZone = this.GetCardZoneViewFromZonePosition(
-        cardMove.fromPosition
-      );
-      console.log(cardMove.toPosition);
-      //zone view update states
-      //also updates the target rects of the cards since
-      fromZone.RemoveCardView(cardView);
-      toZone.AddCardView(cardView);
-      this.gameLayer.bringToTop(this.cardViewMap.get(cardMove.card.id())!);
     }
+    console.log(gameChange.toString());
+    //animate the move
     this.animationController.AnimateGameChange(gameChange, this.gameState, animationContext);
-
-    console.log(`current player turn: ${this.gameState.GetPlayerTurn()}`);
     localStorage.setItem("saveData", JSON.stringify(this.gameState.toJson()));
+    //at the end, determine if it is time to change the player turn
+    if(gameChange.fromPlayer != gameChange.toPlayer && gameChange.toPlayer!=0){
+        this.OnPlayerTurnChange();
+    }
   }
 
-  Undo() {
+  Undo():GameChange|null {
+    if(this.aiTurnTimoutId){
+      clearTimeout(this.aiTurnTimoutId);
+    }
     const lastGameChange = this.PopFromHistory();
     // return undoGameChange;
     if (lastGameChange) {
-      console.log(lastGameChange.toString());
 
       const reversed = lastGameChange.Reverse();
       //it would be nice if undo was in gamestate so I didn't have to remember to do this but game state just generates gamemoves, so it is unclear where one move finishes and another begins, and single turns can consist of multiple of those gamemove functions, for example, moving to table AND dealing out more cards
@@ -252,7 +264,6 @@ export class Game extends Scene {
       new ZonePosition(CardZoneID.TABLE, 0)
     );
     if (gameChange) {
-      console.log("successful board move!!!");
       if (this.gameState.table.GetCards().length == 0) {
       }
       this.AddToHistory(gameChange);
@@ -324,6 +335,33 @@ export class Game extends Scene {
 
       this.DealNewGame();
     });
+    let manualGameStateTimeline:Timeline|null = null;
+    this.input.keyboard!.on("keydown-ONE", () => {
+      if(manualGameStateTimeline){
+        manualGameStateTimeline.stop()
+      }
+      if(this.aiTurnTimoutId){
+        clearTimeout(this.aiTurnTimoutId);
+      }
+      manualGameStateTimeline = this.add.timeline([
+        {
+          at: 0,
+          run: () => {
+            this.ApplyChange(this.gameState.MoveAllCardsToDeck());
+          },
+        },
+        {
+          at: 500,
+          run: () => {
+            this.ApplyChange(GameStateHelpers.CreateScoopableState(this.gameState));
+          },
+        }
+      ]);
+      manualGameStateTimeline.play()
+
+    });
+
+
 
     this.input.on(
       Phaser.Input.Events.POINTER_OVER,
@@ -368,7 +406,7 @@ export class Game extends Scene {
         if (cardOver) {
           const cardView = this.cardViewMap.get(cardOver.id())!;
           if (cardOver.currentZone.id == CardZoneID.HAND) {
-            this.animationController.ResetTableCardAngles(this.gameState);
+            this.animationController.ResetTableCards(this.gameState);
             this.add.tween({
               targets: justOut[0],
               y: cardView.GetTargetPos().y,
@@ -386,7 +424,7 @@ export class Game extends Scene {
         gameObject: Phaser.GameObjects.GameObject
       ) => {
         dragStartTime = this.time.now;
-        this.animationController.ResetTableCardAngles(this.gameState);
+        this.animationController.ResetTableCards(this.gameState);
         for (const [id, cardView] of this.cardViewMap) {
           if (cardView == gameObject) {
             this.heldCardId = id;
@@ -472,7 +510,6 @@ export class Game extends Scene {
         if (this.heldCardId) {
           if (dragStartTime) {
             const dragTime = this.time.now - dragStartTime;
-            console.log("drag time: " + dragTime);
             //maybe check the distance traveled here
             if (dragTime < 300) {
               //register as a click
