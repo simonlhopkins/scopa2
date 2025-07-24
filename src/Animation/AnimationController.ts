@@ -200,7 +200,6 @@ class AnimationController {
       );
       const delay = (i+1) * MOVE_TIME;
       tweens[0].delay = delay;
-      console.log(`tween length: ${tweens.length} delay: ${delay}`);
       this.AddMoveTween(tableCardViews[i].id(), this.scene.tweens.chain({
         tweens
       }));
@@ -217,7 +216,7 @@ class AnimationController {
       });
   }
   
-  AnimateGameChange(gameChange: GameChange, gameState: GameState, context:AnimationContext| null = null) {
+  AnimateGameChange(gameChange: GameChange, gameState: GameState) {
     //separate out the moves that go to piles!
     this.ResetTableCards(gameState);
     gameChange
@@ -349,19 +348,7 @@ class AnimationController {
           });
       }
     }
-
-    //flips
-    // for (const cardMove of gameChange.GetMoves()) {
-    //   const cardView = cardViewMap.get(cardMove.card.id())!;
-    //   if (
-    //     cardMove.toPosition.id == CardZoneID.PILE ||
-    //     cardMove.toPosition.id == CardZoneID.DECK
-    //   ) {
-    //     cardView.Flip(true);
-    //   } else {
-    //     cardView.Flip(false);
-    //   }
-    // }
+    
     for (const move of gameChange.GetMoves()) {
       //default move to behavior
       const cardView = this.cardViewMap.get(move.card.id())!;
@@ -384,8 +371,7 @@ class AnimationController {
         );
       }
     }
-    //reorder table cards
-    //flip
+    //flips
     gameChange.GetFlips().forEach((flip => {
       const cardView = this.cardViewMap.get(flip.card.id())!;
       if(flip.fromOrientation!= flip.toOrientation || true){
@@ -398,7 +384,6 @@ class AnimationController {
             cardView.FlipFaceDown();
           }
         } else {
-          console.log("flipping face up"+ flip.card.toString());
             if(flip.animationContext.flipAtEnd){
                 this.moveTweens.get(flip.card.id())?.on("complete", () => {
                 cardView.FlipFaceUp();
@@ -410,15 +395,13 @@ class AnimationController {
       }
         
     }));
-
-    if(context && context.instant) {
-      //if we are in instant mode, just skip all the animations
-      gameChange.GetCardIds().forEach(id=>{
-        this.ForceCompleteTweensOnCard(id);
-      })
-    }
+    gameChange.GetMoves().forEach((move) => {
+      if(move.animationContext.instant){
+        this.ForceCompleteTweensOnCard(move.card.id());
+      }
+    });
   }
-  ResetTableCards(gameState: GameState) {
+  public ResetTableCards(gameState: GameState) {
     for (const card of gameState.table.GetCards()) {
       this.cardLayer.bringToTop(this.cardViewMap.get(card.id())!);
       this.scene.add.tween({

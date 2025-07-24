@@ -72,6 +72,7 @@ class GameState {
       gameStateJson.playerTurn,
       gameStateJson.playerTurn
     );
+    initChange.Append(this.MoveAllCardsToDeck());
     //everything should be in the deck at this point
     for (const { id, cards } of gameStateJson.hands) {
       const cardMoves = cards.map((card) =>
@@ -94,16 +95,20 @@ class GameState {
       initChange.AddMoves(cardMoves);
     }
 
-    const cardMoves = gameStateJson.table.map((card) =>
+    const deckToTableMoves = gameStateJson.table.map((card) =>
       this.GetCardZoneFromPosition(
         new ZonePosition(CardZoneID.TABLE, 0)
       )!.PushTop(this.deck.TakeCard(this.GetCardFromId(card)!)!)
     );
+    
     for (const cardId of [...gameStateJson.deck].reverse()) {
       this.deck.BringToTop(cardId);
     }
-    initChange.AddMoves(cardMoves);
-
+    initChange.AddMoves(deckToTableMoves);
+    initChange.AddFlips(deckToTableMoves.map(move=>move.card.flipFaceUp()))
+    initChange.GetMoves().forEach(item=>{
+      item.animationContext.instant = true;
+    });
     return initChange;
   }
   MoveTableCardsToPlayerPile(playerNum: number) : GameChange {
@@ -410,16 +415,6 @@ class GameState {
     console.log(str);
   }
   
-  PlayAITurn(){
-    const cardId = this.GetBestCardToPlayForPlayer(this.playerTurn);
-    if (cardId) {
-      const zonePosition = new ZonePosition(CardZoneID.TABLE, 0);
-      return this.MoveCard(cardId, zonePosition);
-    } else {
-      console.log(`player ${this.playerTurn} has no cards to play`);
-    }
-    this.PrintCurrentState();
-  }
   
   CalculateScores() {
     //most cards

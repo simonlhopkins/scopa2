@@ -113,10 +113,8 @@ export class Game extends Scene {
     if (maybeSaveData) {
       console.log("found save game");
       const gameChange = this.gameState.loadFromJson(JSON.parse(maybeSaveData));
-      const context = new AnimationContext();
-      context.instant = true;
       
-      this.ApplyChange(gameChange, context);
+      this.ApplyChange(gameChange);
       if (this.gameState.IsGameOver()) {
         this.DealNewGame();
       }
@@ -147,17 +145,16 @@ export class Game extends Scene {
   OnPlayerTurnChange(){
     if(this.gameState.GetPlayerTurn()!=0){
       this.aiTurnTimoutId = setTimeout(()=>{
-        const aiTurn = this.gameState.PlayAITurn();
-        if(aiTurn){
-          this.AddToHistory(aiTurn);
-          this.ApplyChange(aiTurn);
+        const bestCardToPlay = this.gameState.GetBestCardToPlayForPlayer(this.gameState.GetPlayerTurn());
+        if(bestCardToPlay){
+          this.AttemptMoveCardToTable(bestCardToPlay)
         }
       }, 2000)
     }
   }
   
   
-  ApplyChange(gameChange: GameChange | null, animationContext: AnimationContext|null = null) {
+  ApplyChange(gameChange: GameChange | null) {
     if (gameChange == null) {
       console.log("game change is null, nothing to apply");
       return;
@@ -174,7 +171,7 @@ export class Game extends Scene {
     }
     console.log(gameChange.toString());
     //animate the move
-    this.animationController.AnimateGameChange(gameChange, this.gameState, animationContext);
+    this.animationController.AnimateGameChange(gameChange, this.gameState);
     localStorage.setItem("saveData", JSON.stringify(this.gameState.toJson()));
     //at the end, determine if it is time to change the player turn
     if(gameChange.fromPlayer != gameChange.toPlayer && gameChange.toPlayer!=0){
@@ -269,6 +266,7 @@ export class Game extends Scene {
       this.AddToHistory(gameChange);
       this.ApplyChange(gameChange);
       //end game anim
+      console.log("attempting card move")
       if (this.gameState.IsGameOver()) {
         console.log("GAME OVER!!!");
         const lastPlayerToScoop = this.GetLastPersonToScoopCards();
@@ -332,7 +330,9 @@ export class Game extends Scene {
     });
     this.input.keyboard!.on("keydown-N", () => {
       //newgame
-
+      if(this.aiTurnTimoutId){
+        clearTimeout(this.aiTurnTimoutId);
+      }
       this.DealNewGame();
     });
     let manualGameStateTimeline:Timeline|null = null;
@@ -353,7 +353,7 @@ export class Game extends Scene {
         {
           at: 500,
           run: () => {
-            this.ApplyChange(GameStateHelpers.CreateScoopableState(this.gameState));
+            this.ApplyChange(GameStateHelpers.PreEndGameState(this.gameState));
           },
         }
       ]);
@@ -423,16 +423,17 @@ export class Game extends Scene {
         pointer: Phaser.Input.Pointer,
         gameObject: Phaser.GameObjects.GameObject
       ) => {
-        dragStartTime = this.time.now;
-        this.animationController.ResetTableCards(this.gameState);
-        for (const [id, cardView] of this.cardViewMap) {
-          if (cardView == gameObject) {
-            this.heldCardId = id;
-            this.dragLayer.add(cardView);
-
-            console.log("clicked on" + id);
-            break;
+        const cardClicked = this.GetCardFromGameObject(gameObject)
+        if(cardClicked){
+          if(!this.gameState.playerHands.get(0)!.GetCards().some(card=>card.id()==cardClicked.id())){
+            return;
           }
+          console.log("hand cards: " + this.gameState.playerHands.get(0)!.GetCards().map(card=>card.toString()).join(", "))
+          dragStartTime = this.time.now;
+          this.animationController.ResetTableCards(this.gameState);
+          this.heldCardId = cardClicked.id();
+          this.dragLayer.add(gameObject);
+          console.log("clicked on" + cardClicked.id());
         }
       }
     );
@@ -519,6 +520,7 @@ export class Game extends Scene {
             } else {
               returnHeldCard();
             }
+            this.heldCardId = null;
           } else {
             console.error(
               "drag start time is null in drag end, this should be impossible"

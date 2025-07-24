@@ -2,6 +2,7 @@ import GameChange from "./GameChange.ts";
 import GameState from "./GameState.ts";
 import Card, {Suit} from "./Card.ts";
 import CardMove from "./CardMove.ts";
+import gameState from "./GameState.ts";
 
 class GameStateHelpers{
     
@@ -17,6 +18,21 @@ class GameStateHelpers{
         gameChange.Append(currentState.DealCards())
         gameChange.AddFlip(settaBella.flipFaceUp());
         gameChange.AddFlip(sevenClubs.flipFaceUp());
+        return gameChange;
+    }
+
+    public static PreEndGameState(currentState: GameState): GameChange {
+        const playerTurn = 0;
+        const gameChange = new GameChange(playerTurn, currentState.GetPlayerTurn(), playerTurn);
+        gameChange.Append(currentState.InitialTableCards());
+        gameChange.Append(currentState.DealCards());
+        const deckToPileCards:CardMove[] = [];
+        while(currentState.deck.GetCards().length>0){
+            deckToPileCards.push(currentState.playerPiles.get(0)!.PushTop(currentState.deck.TakeTop()!));
+        }
+        gameChange.AddMoves(deckToPileCards);
+        gameChange.AddFlips(deckToPileCards.map(move=>move.card.flipFaceDown()))
+        
         return gameChange;
     }
     
