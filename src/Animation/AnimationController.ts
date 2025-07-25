@@ -1,14 +1,14 @@
-import card, {CardId} from "../Game/Card";
+import {CardId} from "../Game/Card";
 import {CardZoneID, ZonePosition} from "../Game/CardZone";
 import GameChange from "../Game/GameChange";
 import GameState from "../Game/GameState";
 import CardView from "../Views/CardView";
 import HandView from "../Views/HandView";
 import ICardZoneView from "../Views/ICardZoneView";
-import AnimationContext from "./AnimationContext.ts";
 import CardMove from "../Game/CardMove.ts";
-import {Orientation} from "../Game/CardFlip.ts";
+import CardFlip, {Orientation} from "../Game/CardFlip.ts";
 import TweenChain = Phaser.Tweens.TweenChain;
+import AnimationHelpers from "./AnimationHelpers.ts";
 
 async function WaitUntilTweensFinish(tweens: Phaser.Tweens.Tween[]) {
   const tweenPromises = tweens.map(
@@ -23,6 +23,7 @@ class AnimationController {
   private handViews: Map<number, HandView>;
   private pileViews: Map<number, ICardZoneView>;
   private cardViewMap: Map<CardId, CardView>;
+  tweensCanceled = 0;
   //   views:
 
   //animation state
@@ -30,6 +31,7 @@ class AnimationController {
     CardId,
     Phaser.Tweens.Tween | Phaser.Tweens.TweenChain
   > = new Map();
+  
   cardLayer: Phaser.GameObjects.Layer;
   constructor(
     scene: Phaser.Scene,
@@ -46,7 +48,6 @@ class AnimationController {
     this.cardLayer = cardLayer;
   }
   CardsMoving() {
-    console.log("card moving size = " + this.moveTweens.size);
     return this.moveTweens.size > 0;
   }
   AddMoveTween(
@@ -54,8 +55,7 @@ class AnimationController {
     tween: Phaser.Tweens.Tween | Phaser.Tweens.TweenChain
   ) {
     if (this.moveTweens.has(cardId)) {
-      this.moveTweens.get(cardId)!.complete();
-      this.moveTweens.delete(cardId);
+      console.error("Card already has a move tween: ", cardId);
     }
     this.moveTweens.set(cardId, tween);
     tween.on("complete", () => {
@@ -64,36 +64,20 @@ class AnimationController {
 
     return tween;
   }
+  
+  
   CancelTweensOnGameObject(gameObject: Phaser.GameObjects.GameObject) {
     this.scene.tweens.killTweensOf(gameObject);
   }
-  private ForceFinishTween(tween:Phaser.Tweens.Tween){
+  private static ForceFinishTween(tween:Phaser.Tweens.Tween){
     tween.seek(tween.duration+100);
   }
-  ForceCompleteTweensOnGameObject(gameObject: Phaser.GameObjects.GameObject) {
-    const tweens = this.scene.tweens.getTweensOf(gameObject);
-    tweens.forEach((tween) => {
-      if(tween instanceof Phaser.Tweens.TweenChain){
-        const chain:TweenChain = tween;
-        this.ForceFinishTween(chain.currentTween);
-        while (!chain.nextTween()){
-          if(chain.currentTween){
-            this.ForceFinishTween(chain.currentTween);
-          }
-        }
-      }else{
-        this.ForceFinishTween(tween)
-      }
-      tween.complete();
-
-    });
-  }
-  ForceCompleteTweensOnCard(cardId: CardId) {
-    const cardView = this.cardViewMap.get(cardId);
-    if (cardView) {
-      this.ForceCompleteTweensOnGameObject(cardView);
-    } else {
-      console.warn(`Card with ID ${cardId} not found in cardViewMap.`);
+  
+  ForceCompleteMoveTweensOnCard(cardId:CardId) {
+    const tween = this.moveTweens.get(cardId);
+    if(tween) {
+      this.tweensCanceled++
+      AnimationHelpers.ForceFinishTween(tween);
     }
   }
 
@@ -140,15 +124,16 @@ class AnimationController {
       );
     }
   }
-  DoScoopAnimation(captureMoves: CardMove[]) {
+  DoScoopMoveAnimation(captureMoves: CardMove[]) {
     
     const fromHandCardView = this.cardViewMap.get(captureMoves.find(move => move.fromPosition.id == CardZoneID.HAND)!.card.id())!;
     const tableCardViews = captureMoves
         .filter(move => move.fromPosition.id == CardZoneID.TABLE)
         .map(move => this.cardViewMap.get(move.card.id())!);
     
+    const isScopa = captureMoves.every(item=>item.animationContext.scopaAnimation);
+    console.log(isScopa)
     const MOVE_TIME = 400;
-    
     
     const handCardTweens:Phaser.Types.Tweens.TweenBuilderConfig[] = tableCardViews.map(cardView=>{
       return {
@@ -165,10 +150,15 @@ class AnimationController {
         y: fromHandCardView.GetTargetPos().y,
         duration: MOVE_TIME,
         ease: Phaser.Math.Easing.Back.Out,
-        onStart: () => {
-            fromHandCardView.FlipFaceDown();
-        },
     })
+    if(isScopa){
+      handCardTweens.push({
+        targets: fromHandCardView,
+        angle: 360,
+        duration: 500,
+        ease: Phaser.Math.Easing.Back.Out,
+      })
+    }
     this.AddMoveTween(fromHandCardView.id(), this.scene.tweens.chain({
       tweens: handCardTweens
     }));
@@ -192,19 +182,24 @@ class AnimationController {
             y: tableCardViews[i].GetTargetPos().y,
             duration: MOVE_TIME,
             ease: Phaser.Math.Easing.Back.Out,
-            angle: 0,
-            onStart: () => {
-              tableCardViews[i].FlipFaceDown();
-            },
+            angle: 0
           }
       );
-      const delay = (i+1) * MOVE_TIME;
-      tweens[0].delay = delay;
+      if(isScopa){
+        tweens.push({
+          targets: tableCardViews[i],
+          angle: 360,
+          duration: 500,
+          ease: Phaser.Math.Easing.Back.Out,
+        })
+      }
+      tweens[0].delay = (i + 1) * MOVE_TIME;
       this.AddMoveTween(tableCardViews[i].id(), this.scene.tweens.chain({
         tweens
       }));
-
     }
+    
+    
   }
   private MoveAllCardsToTargetPos(gameChange: GameChange){
     gameChange
@@ -217,17 +212,16 @@ class AnimationController {
   }
   
   AnimateGameChange(gameChange: GameChange, gameState: GameState) {
-    //separate out the moves that go to piles!
+    this.tweensCanceled = 0;
     this.ResetTableCards(gameState);
-    gameChange
-      .GetMoves()
-      .map((move) => this.cardViewMap.get(move.card.id())!)
-      .forEach((cardView) => {
-        this.ForceCompleteTweensOnGameObject(cardView);
-      });
+    //force complete tweens on cards involved in moving
+    
     const cardIDsMoved = new Set(
       gameChange.GetMoves().map((move) => move.card.id())
     );
+    cardIDsMoved.forEach((id) => {
+      this.ForceCompleteMoveTweensOnCard(id);
+    });
     const handsEffected = new Set(
       gameChange
         .GetMoves()
@@ -247,13 +241,6 @@ class AnimationController {
       .forEach((cardMove) => {
         const cardView = this.cardViewMap.get(cardMove.card.id())!;
         cardView.SetTargetScale(1, 1);
-        // this.scene.add.tween({
-        //   targets: cardView,
-        //   scaleX: 1,
-        //   scaleY: 1,
-        //   duration: 300,
-        //   ease: Phaser.Math.Easing.Back.Out,
-        // });
       });
     //we know that there was a scoop on this gamechange?
     const toPileMoves = gameChange
@@ -283,7 +270,7 @@ class AnimationController {
 
     for (const [player, scoopMoves] of scoopMap) {
       //move each of the cards to the index based on their capture arr, then move into the pile.
-      this.DoScoopAnimation(scoopMoves);
+      this.DoScoopMoveAnimation(scoopMoves);
     }
 
     //moves that go from the deck to the hands (dealing them out)
@@ -349,18 +336,18 @@ class AnimationController {
       }
     }
     
-    for (const move of gameChange.GetMoves()) {
+    for (const id of cardIDsMoved) {
       //default move to behavior
-      const cardView = this.cardViewMap.get(move.card.id())!;
+      const cardView = this.cardViewMap.get(id)!;
       const toPos = cardView.GetTargetPos();
       if (
-        !dealtMoves.some((cardMove) => cardMove.card.id() == move.card.id())
+        !dealtMoves.some((cardMove) => cardMove.card.id() == id)
       ) {
         cardView.AnimateToTargetScale();
       }
-      if (!this.moveTweens.has(move.card.id())) {
+      if (!this.moveTweens.has(id)) {
         this.AddMoveTween(
-          move.card.id(),
+            id,
           this.scene.add.tween({
             targets: cardView,
             x: toPos.x,
@@ -372,34 +359,35 @@ class AnimationController {
       }
     }
     //flips
-    gameChange.GetFlips().forEach((flip => {
-      const cardView = this.cardViewMap.get(flip.card.id())!;
-      if(flip.fromOrientation!= flip.toOrientation || true){
-        if (flip.toOrientation == Orientation.Down) {
-          if(flip.animationContext.flipAtEnd){
-            this.moveTweens.get(flip.card.id())?.on("complete", () => {
-              cardView.FlipFaceDown();
-            });
-          }else{
-            cardView.FlipFaceDown();
-          }
-        } else {
-            if(flip.animationContext.flipAtEnd){
-                this.moveTweens.get(flip.card.id())?.on("complete", () => {
-                cardView.FlipFaceUp();
-                });
-            }else{
-                cardView.FlipFaceUp();
-            }
-        }
-      }
-        
-    }));
+    this.AnimateCardFlips(gameChange.GetFlips());
+    
+    //instantly finish everything if it is instant
     gameChange.GetMoves().forEach((move) => {
       if(move.animationContext.instant){
-        this.ForceCompleteTweensOnCard(move.card.id());
+        this.ForceCompleteMoveTweensOnCard(move.card.id());
       }
     });
+    console.log("num animations canceled: ", this.tweensCanceled);
+  }
+  
+  private AnimateCardFlips(cardFlips: CardFlip[]){
+    cardFlips.forEach((flip => {
+      const cardView = this.cardViewMap.get(flip.card.id())!;
+      if(flip.fromOrientation != flip.toOrientation) {
+        if (flip.animationContext.flipAtEnd) {
+          const currentMoveTween = this.moveTweens.get(flip.card.id());
+          if (currentMoveTween) {
+            currentMoveTween.on("complete", () => {
+              cardView.DoFlipAnimation(flip.toOrientation);
+            });
+          } else {
+            cardView.DoFlipAnimation(flip.toOrientation);
+          }
+        } else {
+          cardView.DoFlipAnimation(flip.toOrientation);
+        }
+      }
+    }));
   }
   public ResetTableCards(gameState: GameState) {
     for (const card of gameState.table.GetCards()) {

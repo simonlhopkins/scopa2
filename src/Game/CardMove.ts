@@ -5,7 +5,6 @@ import AnimationContext from "../Animation/AnimationContext.ts";
     card: Card;
     fromPosition: ZonePosition;
     toPosition: ZonePosition;
-    isScopa: boolean = false;
     animationContext: CardMoveAnimationContext = new CardMoveAnimationContext();
     constructor(
         _card: Card,
@@ -22,16 +21,13 @@ import AnimationContext from "../Animation/AnimationContext.ts";
             this.toPosition,
             this.fromPosition
         );
-        cardmove.setScopa(this.isScopa);
         return cardmove;
-    }
-    setScopa(isScopa: boolean) {
-        this.isScopa = isScopa;
     }
 }
 
 class CardMoveAnimationContext{
     instant: boolean = false;
+    scopaAnimation: boolean = false;
 } 
 export {CardMoveAnimationContext};
 export default CardMove;

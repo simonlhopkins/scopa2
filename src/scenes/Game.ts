@@ -360,6 +360,30 @@ export class Game extends Scene {
       manualGameStateTimeline.play()
 
     });
+    this.input.keyboard!.on("keydown-TWO", () => {
+      if(manualGameStateTimeline){
+        manualGameStateTimeline.stop()
+      }
+      if(this.aiTurnTimoutId){
+        clearTimeout(this.aiTurnTimoutId);
+      }
+      manualGameStateTimeline = this.add.timeline([
+        {
+          at: 0,
+          run: () => {
+            this.ApplyChange(this.gameState.MoveAllCardsToDeck());
+          },
+        },
+        {
+          at: 500,
+          run: () => {
+            this.ApplyChange(GameStateHelpers.CreateScoopableState(this.gameState));
+          },
+        }
+      ]);
+      manualGameStateTimeline.play()
+
+    });
 
 
 

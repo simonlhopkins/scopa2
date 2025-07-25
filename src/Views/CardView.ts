@@ -1,10 +1,11 @@
-import Card, { CardId } from "../Game/Card";
+import Card from "../Game/Card";
+import {Orientation} from "../Game/CardFlip.ts";
+import AnimationHelpers from "../Animation/AnimationHelpers.ts";
 
 class CardView extends Phaser.GameObjects.Container {
   private cardSprite: Phaser.GameObjects.Sprite;
   card: Card;
   flipTween: Phaser.Tweens.TweenChain | null = null;
-  private isFlipped = false;
   private targetPosition: Phaser.Math.Vector2 = new Phaser.Math.Vector2(0, 0);
   private targetScale: Phaser.Math.Vector2 = new Phaser.Math.Vector2(1, 1);
   private sizeScaler = 1;
@@ -34,38 +35,32 @@ class CardView extends Phaser.GameObjects.Container {
   GetTargetPos() {
     return this.targetPosition;
   }
-  FlipFaceUp() {
-    this.cardSprite.setTexture(
-         Card.GetTextureName(this.card)
-    );
-  }
-  FlipFaceDown() {
-    this.cardSprite.setTexture(
-        "cardBack"
-    );
-  }
-  private Flip(forceFlip?: boolean) {
-    if (this.isFlipped == forceFlip) return;
-    this.isFlipped = forceFlip ?? !this.isFlipped;
+  
+  public DoFlipAnimation(toOrientation: Orientation) {
     if (this.flipTween) {
-      this.flipTween.stop();
+      console.log(this.flipTween)
+      AnimationHelpers.ForceFinishTween(this.flipTween);
+      this.flipTween = null;
     }
     this.flipTween = this.scene.tweens.chain({
       targets: this.cardSprite,
+      onComplete: () => {
+        this.flipTween = null
+      },
       tweens: [
         {
           scaleX: 0,
-          duration: 200,
+          duration: 100,
           ease: Phaser.Math.Easing.Linear,
           onComplete: () => {
             this.cardSprite.setTexture(
-              this.isFlipped ? "cardBack" : Card.GetTextureName(this.card)
+                toOrientation==Orientation.Down ? "cardBack" : Card.GetTextureName(this.card)
             );
           },
         },
         {
           scaleX: 3,
-          duration: 200,
+          duration: 100,
           ease: Phaser.Math.Easing.Linear,
         },
       ],

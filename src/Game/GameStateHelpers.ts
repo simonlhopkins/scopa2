@@ -3,6 +3,7 @@ import GameState from "./GameState.ts";
 import Card, {Suit} from "./Card.ts";
 import CardMove from "./CardMove.ts";
 import gameState from "./GameState.ts";
+import Timeline = Phaser.Time.Timeline;
 
 class GameStateHelpers{
     
@@ -35,7 +36,6 @@ class GameStateHelpers{
         
         return gameChange;
     }
-    
 }
 
 export default GameStateHelpers;

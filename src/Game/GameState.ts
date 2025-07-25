@@ -6,6 +6,7 @@ import Util from "../Util";
 import CardMove from "./CardMove.ts";
 import CardFlip, {CardFlipAnimationContext} from "./CardFlip.ts";
 import AnimationContext from "../Animation/AnimationContext.ts";
+import cardMove from "./CardMove.ts";
 
 export interface ScoopResult {
   handCard: Card;
@@ -124,6 +125,9 @@ class GameState {
     for (const card of this.table.GetCards()) {
       const move = playerPile.PushTop(this.table.TakeCard(card)!);
       gameChange.AddMove(move);
+      const flip = card.flipFaceDown();
+      flip.animationContext.flipAtEnd = true;
+      gameChange.AddFlip(flip);
     }
     return gameChange;
   }
@@ -208,7 +212,9 @@ class GameState {
     for (let i = 0; i < 4; i++) {
       const card = this.deck.TakeTop();
       if (card) {
-        gameChange.AddFlip(card.flipFaceUp())
+        const flip = card.flipFaceUp();
+        flip.animationContext.flipAtEnd = true;
+        gameChange.AddFlip(flip)
         gameChange.AddMove(this.table.PushTop(card));
       }
     }
@@ -224,7 +230,9 @@ class GameState {
         if (card && hand.GetCards().length<3) {
           const move = hand.PushTop(card);
           if(playerNum ==0){
-            gameChange.AddFlip(card.flipFaceUp());
+            const flip = card.flipFaceUp();
+            flip.animationContext.flipAtEnd =true;
+            gameChange.AddFlip(flip);
           }else{
             gameChange.AddFlip(card.flipFaceDown());
           }
@@ -322,14 +330,16 @@ class GameState {
           );
           //todo: give player option of which scoop to do if there are multiple options
           const scoopResultToPlay = possibleScoops[0];
+          const isScopa = scoopResultToPlay.tableCards.length == this.table.GetCards().length;
           //table to pile cards
+          console.log(isScopa);
           for (const tableCard of scoopResultToPlay.tableCards) {
             const cardMove = playerPile!.PushTop(
               this.table.TakeCard(tableCard)!
             );
             const cardFlip = tableCard.flipFaceDown();
-            cardFlip.animationContext =  new CardFlipAnimationContext();
             cardFlip.animationContext.flipAtEnd = true;
+            cardMove.animationContext.scopaAnimation = isScopa;
             gameChange.AddFlip(cardFlip);
             gameChange.AddMove(cardMove);
           }
@@ -337,13 +347,12 @@ class GameState {
           const handToPileCardMove = playerPile!.PushTop(
             fromZone.TakeCard(scoopResultToPlay.handCard)!
           );
+          handToPileCardMove.animationContext.scopaAnimation = isScopa
           //ehh idk if I like this
-          handToPileCardMove.setScopa(this.table.GetCards().length == 0);
           gameChange.AddScoopResult(scoopResultToPlay);
           gameChange.AddMove(handToPileCardMove);
           gameChange.AddFlip(card.flipFaceUp());
           const cardFlip = card.flipFaceDown();
-          cardFlip.animationContext =  new CardFlipAnimationContext();
           cardFlip.animationContext.flipAtEnd = true;
           gameChange.AddFlip(cardFlip);
           
