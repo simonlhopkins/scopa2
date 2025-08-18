@@ -1,8 +1,8 @@
-import { Scene } from "phaser";
-import { CardZoneID, ZonePosition } from "../Game/CardZone";
+import {Scene} from "phaser";
+import CardZone, {CardZoneID, ZonePosition} from "../Game/CardZone";
 import GameChange from "../Game/GameChange";
-import GameState from "../Game/GameState";
-import { CardId } from "../Game/Card";
+import GameState, {ScoopResult} from "../Game/GameState";
+import Card, {CardId, Suit} from "../Game/Card";
 import TableView from "../Views/TableView";
 import HandView from "../Views/HandView";
 import CardView from "../Views/CardView";
@@ -10,11 +10,16 @@ import DeckView from "../Views/DeckView";
 import PileView from "../Views/PileView";
 import ICardZoneView from "../Views/ICardZoneView";
 import AnimationController from "../Animation/AnimationController";
-import AnimationContext from "../Animation/AnimationContext.ts";
+import IInputEventHandler from "../Input/IInputEventHandler.ts";
+import InputController from "../Input/InputController.ts";
 import GameStateHelpers from "../Game/GameStateHelpers.ts";
-import Timeline = Phaser.Time.Timeline;
+import {SceneKeys} from "./SceneKeys.ts";
+import AnimationHelpers from "../Animation/AnimationHelpers.ts";
+import EndGameCardZoneView from "../Views/EndGameCardZoneView.ts";
+import PopupController from "../PopupController.ts";
+import GameObject = Phaser.GameObjects.GameObject;
 
-export class Game extends Scene {
+export class Game extends Scene implements IInputEventHandler {
   camera: Phaser.Cameras.Scene2D.Camera;
   background: Phaser.GameObjects.Image;
   msg_text: Phaser.GameObjects.Text;
@@ -25,25 +30,34 @@ export class Game extends Scene {
   deckView: DeckView;
   handViews: Map<number, HandView> = new Map();
   pileViews: Map<number, PileView> = new Map();
+  endGameView: EndGameCardZoneView;
   heldCardId: CardId | null;
   dragLayer: Phaser.GameObjects.Layer;
   gameLayer: Phaser.GameObjects.Layer;
 
   animationController: AnimationController;
+  inputController: InputController;
+  popupController: PopupController;
   history: GameChange[] = [];
-
+  
   //I should move these out into something else maybe
   newGameDealTimeline: null | Phaser.Time.Timeline = null;
-  aiTurnTimoutId:number|null = null;
   // cardZoneViews: Map<ZonePosition, >
   constructor() {
-    super("Game");
+    super(SceneKeys.Game);
     this.animationController = new AnimationController(
       this,
       this.handViews,
       this.pileViews,
       this.cardViewMap
     );
+    
+    this.inputController = new InputController(
+        this,
+        this,
+        this.animationController
+    );
+    this.popupController = new PopupController(this);
   }
 
   create() {
@@ -61,6 +75,7 @@ export class Game extends Scene {
     this.gameLayer = this.add.layer().setDepth(0);
 
     this.animationController.Create(this.gameLayer);
+    this.inputController.initialize();
 
     this.tableView = this.add.existing(new TableView(this));
     this.gameLayer.add(this.tableView);
@@ -84,14 +99,16 @@ export class Game extends Scene {
       newHandView.setPosition(512 + xOff, 384 + yOff);
       const pilePos = this.GetPilePosition(handIndex, this.gameState);
       newPileView.setPosition(pilePos.x, pilePos.y);
+      
       handIndex++;
     }
+    this.endGameView = this.add.existing(new EndGameCardZoneView(this));
+    this.endGameView.setPosition(this.scale.width/2, this.scale.height/2);
     this.tableView.setPosition(512, 384);
 
     this.camera = this.cameras.main;
     this.camera.setBackgroundColor(0x00ff00);
 
-    this.initializeInput();
     //initialize zones
     //initialize cards
     for (const id of this.gameState.GetCardIds()) {
@@ -109,6 +126,8 @@ export class Game extends Scene {
       }
     }
     // this.ApplyChange(this.gameState.MoveAllCardsToDeck());
+    this.endGameView.Reset();
+
     const maybeSaveData = localStorage.getItem("saveData");
     if (maybeSaveData) {
       console.log("found save game");
@@ -116,15 +135,18 @@ export class Game extends Scene {
       
       this.ApplyChange(gameChange);
       if (this.gameState.IsGameOver()) {
-        this.DealNewGame();
+        console.log(this.gameState)
+        // this.ApplyChange(gameChange);
+        this.scene.launch(SceneKeys.EndOfGame, this.gameState)
+
       }
     } else {
       this.ApplyChange(this.gameState.DealCards());
       this.ApplyChange(this.gameState.InitialTableCards());
     }
-    this.OnPlayerTurnChange();
   }
-
+  
+  
   GetLastPersonToScoopCards() {
     for (let i = this.history.length - 1; i >= 0; i--) {
       const gameChange = this.history[i];
@@ -142,24 +164,25 @@ export class Game extends Scene {
     }
     return null;
   }
-  OnPlayerTurnChange(){
-    if(this.gameState.GetPlayerTurn()!=0){
-      this.aiTurnTimoutId = setTimeout(()=>{
-        const bestCardToPlay = this.gameState.GetBestCardToPlayForPlayer(this.gameState.GetPlayerTurn());
-        if(bestCardToPlay){
-          this.AttemptMoveCardToTable(bestCardToPlay)
-        }
-      }, 2000)
+  
+  public PlayBestMoveForCurrentPlayer(){
+    const bestCardToPlay = this.gameState.GetBestCardToPlayForPlayer(this.gameState.GetPlayerTurn());
+    if(bestCardToPlay){
+      this.AttemptMoveCardToTable(bestCardToPlay)
     }
+  }
+  
+  
+  GetPlayerHand():CardZone{
+    return this.gameState.playerHands.get(0)!;
   }
   
   
   ApplyChange(gameChange: GameChange | null) {
     if (gameChange == null) {
       console.log("game change is null, nothing to apply");
-      return;
+      return null;
     }
-    
     for (const cardMove of gameChange.GetMoves()) {
       const cardView = this.cardViewMap.get(cardMove.card.id());
       if (cardView) {
@@ -169,32 +192,40 @@ export class Game extends Scene {
         console.error(`couldn't find card view for card ${cardMove.card.id()}`);
       }
     }
-    console.log(gameChange.toString());
     //animate the move
-    this.animationController.AnimateGameChange(gameChange, this.gameState);
+    const resultingTweens = this.animationController.AnimateGameChange(gameChange, this.gameState);
     localStorage.setItem("saveData", JSON.stringify(this.gameState.toJson()));
     //at the end, determine if it is time to change the player turn
     if(gameChange.fromPlayer != gameChange.toPlayer && gameChange.toPlayer!=0){
-        this.OnPlayerTurnChange();
+        // this.OnPlayerTurnChange();
+      const delayAfter = gameChange.fromPlayer == 0 ? 500: 1000;
+      AnimationHelpers.WaitForTweensToComplete(resultingTweens, delayAfter).then(()=>{
+        //only progress if the move that was played is the same as the last move in history
+        if(gameChange.Equals(this.history[this.history.length-1])){
+          this.PlayBestMoveForCurrentPlayer();
+        }else {
+          console.log("NOT EQUAL ANYMORE!!")
+        }
+        
+      })
     }
   }
 
-  Undo():GameChange|null {
-    if(this.aiTurnTimoutId){
-      clearTimeout(this.aiTurnTimoutId);
+  Undo():void {
+    if(this.history.length < 1){
+      console.log("cannot undo, make at least 2 moves")
+      return;
     }
     const lastGameChange = this.PopFromHistory();
     // return undoGameChange;
     if (lastGameChange) {
-
       const reversed = lastGameChange.Reverse();
       //it would be nice if undo was in gamestate so I didn't have to remember to do this but game state just generates gamemoves, so it is unclear where one move finishes and another begins, and single turns can consist of multiple of those gamemove functions, for example, moving to table AND dealing out more cards
       this.gameState.ApplyChange(reversed);
-      return reversed;
+      this.ApplyChange(reversed);
     }
-    return null;
   }
-  GetCardFromGameObject(gameObject: Phaser.GameObjects.GameObject) {
+  GetCardFromGameObject(gameObject: Phaser.GameObjects.GameObject) : Card | null {
     for (const [id, cardView] of this.cardViewMap) {
       if (cardView == gameObject) {
         return this.gameState.GetCardFromId(id);
@@ -211,15 +242,20 @@ export class Game extends Scene {
     localStorage.setItem("history", JSON.stringify(this.history));
     return poppedMove;
   }
+  ClearHistory() {
+    this.history = [];
+    localStorage.setItem("history", JSON.stringify(this.history));
+  }
 
   DealNewGame() {
-    
+    this.ClearHistory();
     //I need to break this out into a gamestate function so I can also modify the player turn in it!!!, right now I just modify it inside of dealchange since so far that is true
     if (this.newGameDealTimeline) {
       this.newGameDealTimeline.stop();
     }
     const playerAtEndOfLastGame = this.gameState.GetPlayerTurn();
     const moveToDeckChange = this.gameState.MoveAllCardsToDeck();
+    
     const dealChange = this.gameState.DealCards();
     const initialDeal = this.gameState.InitialTableCards();
     // this.AddToHistory(moveToDeckChange);
@@ -254,12 +290,22 @@ export class Game extends Scene {
     ]);
     this.newGameDealTimeline.play();
   }
-  AttemptMoveCardToTable(cardId: CardId): GameChange | null {
+  AttemptMoveCardToTable(cardId: CardId, maybePreferredScoopResult: ScoopResult|null = null): GameChange | null {
+    const scoopResults = this.gameState.GetPossibleScoops([this.gameState.GetCardFromId(cardId)!]);
+    //🤮🤮🤮
+    if(scoopResults.length>1 && !maybePreferredScoopResult && this.gameState.GetPlayerTurn() == 0){
+      this.popupController.ShowScoopChoicePopup(scoopResults, (chosenScoop)=>{
+        this.AttemptMoveCardToTable(cardId, chosenScoop);
+      }, ()=>{});
+      return null;
+    }
     this.gameLayer.add(this.cardViewMap.get(cardId)!);
     const gameChange = this.gameState.MoveCard(
       cardId,
-      new ZonePosition(CardZoneID.TABLE, 0)
+      new ZonePosition(CardZoneID.TABLE, 0),
+      maybePreferredScoopResult
     );
+    
     if (gameChange) {
       if (this.gameState.table.GetCards().length == 0) {
       }
@@ -290,6 +336,11 @@ export class Game extends Scene {
               run: () => {
                 console.log("apply change final board move");
                 this.ApplyChange(endGameMove);
+                this.animationController.AddOnMoveTweensCompleteCallback(()=>{
+                  // this.OnGameOver();
+                  this.scene.launch(SceneKeys.EndOfGame, this.gameState);
+                  // this.ApplyChange(this.gameState.MoveCardsToEndGameState());
+                })
               },
             })
             .play();
@@ -298,222 +349,174 @@ export class Game extends Scene {
     }
     return gameChange;
   }
+  // private GetEndOfGameData(){
+  //   const endGameData = new EndGameData();
+  //   const scopaMoves = this.history.filter(move=>move.isScopa);
+  //   const scopaMap = new Map<number, number>();
+  //   for(const move of scopaMoves){
+  //       const playerId = move.playerTurn;
+  //       if(scopaMap.has(playerId)){
+  //           scopaMap.set(playerId, scopaMap.get(playerId)! + 1);
+  //       }else{
+  //           scopaMap.set(playerId, 1);
+  //       }
+  //   }
+  //   endGameData.scoreResult = this.gameState.CalculateScores();
+  //   endGameData.scopaMap = scopaMap;
+  //   endGameData.handler = this;
+  //   // this.scene.pause(SceneKeys.Game);
+  //   return endGameData;
+  // }
   IgnoreInput() {
-    return this.animationController.CardsMoving();
+    return this.popupController.IsShowing();
   }
-  initializeInput() {
-    let dragStartTime: null | number = null;
-    this.input.keyboard!.on("keydown-U", () => {
-      if (this.IgnoreInput()) {
-        console.log("don't undo while cards are moving it can break things...");
-        return;
+  
+  OnCardHovered(card: Card) {
+  if(this.IgnoreInput()){
+    return
+  }
+  this.ResetHandCards();
+  const cardView = this.cardViewMap.get(card.id())!;
+  switch (card.currentZone.id) {
+    case CardZoneID.HAND:
+      cardView.ToggleUp();
+      if (this.GetPlayerHand().HasCard(card)) {
+        this.animationController.AnimateTableScoopsForCard(
+          card.id(),
+          this.gameState
+        );
       }
-      const undoMove = this.Undo();
-      if (undoMove) {
-        this.ApplyChange(undoMove);
-      }
-    });
-    this.input.keyboard!.on("keydown-C", () => {
-      const result = this.gameState.CalculateScores();
-      //amount of scopas
-      console.log(result.toString());
-    });
-    this.input.keyboard!.on("keydown-P", () => {
-      const currentPlayerTurn = this.gameState.GetPlayerTurn();
-      const bestMove =
-        this.gameState.GetBestCardToPlayForPlayer(currentPlayerTurn);
-      if (bestMove) {
-        this.AttemptMoveCardToTable(bestMove);
-      } else {
-        console.log("no best move found");
-      }
-    });
-    this.input.keyboard!.on("keydown-N", () => {
-      //newgame
-      if(this.aiTurnTimoutId){
-        clearTimeout(this.aiTurnTimoutId);
-      }
-      this.DealNewGame();
-    });
-    let manualGameStateTimeline:Timeline|null = null;
-    this.input.keyboard!.on("keydown-ONE", () => {
-      if(manualGameStateTimeline){
-        manualGameStateTimeline.stop()
-      }
-      if(this.aiTurnTimoutId){
-        clearTimeout(this.aiTurnTimoutId);
-      }
-      manualGameStateTimeline = this.add.timeline([
-        {
-          at: 0,
-          run: () => {
-            this.ApplyChange(this.gameState.MoveAllCardsToDeck());
-          },
-        },
-        {
-          at: 500,
-          run: () => {
-            this.ApplyChange(GameStateHelpers.PreEndGameState(this.gameState));
-          },
-        }
-      ]);
-      manualGameStateTimeline.play()
+      break;
+    case CardZoneID.PILE:
+      console.log(
+        this.gameState
+          .GetCardZoneFromPosition(card.currentZone)
+          ?.toString()
+      );
+      break;
+    case CardZoneID.TABLE:
+      console.log(
+        this.gameState
+          .GetCardZoneFromPosition(card.currentZone)
+          ?.toString()
+      );
+      break;
+    case CardZoneID.END_GAME:
+      console.log("end game");
+      break;
+  }
+}
+  public OnPointerOverGameObject(gameobject: GameObject){
+    const cardOver = this.GetCardFromGameObject(gameobject);
+    if (cardOver) {
+      //and not moving
+      // this.ApplyChange(this.gameState.FlipCardFaceUp(cardOver.id()))
 
-    });
-    this.input.keyboard!.on("keydown-TWO", () => {
-      if(manualGameStateTimeline){
-        manualGameStateTimeline.stop()
-      }
-      if(this.aiTurnTimoutId){
-        clearTimeout(this.aiTurnTimoutId);
-      }
-      manualGameStateTimeline = this.add.timeline([
-        {
-          at: 0,
-          run: () => {
-            this.ApplyChange(this.gameState.MoveAllCardsToDeck());
-          },
-        },
-        {
-          at: 500,
-          run: () => {
+      this.OnCardHovered(cardOver);
+    }
+  }
+  GetCardViewFromId(cardId: CardId){
+    return  this.cardViewMap.get(cardId)!;
+  }
+  OnDebugCommand(command:string){
+    switch (command){
+        case "dealNewGame":
+            this.DealNewGame();
+            break;
+        case "undo":
+            this.Undo();
+            break;
+        case "scoopableState":
             this.ApplyChange(GameStateHelpers.CreateScoopableState(this.gameState));
-          },
+            break;
+        case "preEndGame":
+            this.ApplyChange(GameStateHelpers.PreEndGameState(this.gameState));
+            break;
+        default:
+            console.warn(`unknown debug command ${command}`);
+            break;
+    }
+  }
+  public ResetHandCards(){
+    this.animationController.ResetTableCards(this.gameState);
+    for(const [num, cardzone] of this.gameState.playerHands){
+      for(const cards of cardzone.GetCards()){
+        const cardView = this.cardViewMap.get(cards.id());
+        if(cardView){
+          cardView.ToggleDown();
+        }else{
+          console.error(`couldn't find card view for card ${cards.id()}`);
         }
-      ]);
-      manualGameStateTimeline.play()
+      }
+        
+    }
+  }
+  public OnPointerExitGameObject(gameobject: GameObject){
+    //was it a card?
+    const cardOver = this.GetCardFromGameObject(gameobject);
+    if(cardOver){
+      // const flipGameChange = new GameChange(this.gameState.GetPlayerTurn(), this.gameState.GetPlayerTurn(), this.gameState.GetPlayerTurn());
+      // flipGameChange.AddFlip(new CardFlip(cardOver, cardOver.orientation, Orientation.Down));
+      // this.gameState.ApplyChange(flipGameChange);
+      // this.ApplyChange(flipGameChange);
+      // this.ApplyChange(this.gameState.FlipCardFaceDown(cardOver.id()))
 
-    });
+    }
 
-
-
-    this.input.on(
-      Phaser.Input.Events.POINTER_OVER,
-      (
-        pointer: Phaser.Input.Pointer,
-        justOver: Phaser.GameObjects.GameObject[]
-      ) => {
-        //was it a card?
-        const cardOver = this.GetCardFromGameObject(justOver[0]);
-        if (cardOver) {
-          //and not moving
-          const cardView = this.cardViewMap.get(cardOver.id())!;
-          this.animationController.AnimateTableScoopsForCard(
-            cardOver.id(),
+    this.ResetHandCards();
+    
+  }
+  
+  public OnDragStart(gameobject: GameObject){
+    
+    const cardClicked = this.GetCardFromGameObject(gameobject)
+    if(cardClicked){
+      // if(!this.gameState.playerHands.get(0)!.GetCards().some(card=>card.id()==cardClicked.id())){
+      //   return;
+      // }
+      console.log("hand cards: " + this.gameState.playerHands.get(0)!.GetCards().map(card=>card.toString()).join(", "))
+      // dragStartTime = this.time.now;
+      this.GetCardViewFromId(cardClicked.id()).ToggleDown();
+      this.animationController.ResetTableCards(this.gameState);
+      this.heldCardId = cardClicked.id();
+      this.dragLayer.add(gameobject);
+    }
+  }
+  
+  public OnDragEnter(target: GameObject) {
+    if (target == this.tableView.dropZone) {
+      if (this.heldCardId) {
+        this.animationController.AnimateTableScoopsForCard(
+            this.heldCardId,
             this.gameState
-          );
-          if (cardOver.currentZone.id == CardZoneID.HAND) {
-            this.add.tween({
-              targets: justOver[0],
-              y: cardView.GetTargetPos().y - 20,
-              duration: 400,
-              ease: Phaser.Math.Easing.Back.Out,
-            });
-          } else if (cardOver.currentZone.id == CardZoneID.PILE) {
-            console.log(
-              this.gameState
-                .GetCardZoneFromPosition(cardOver.currentZone)
-                ?.toString()
-            );
-          }
-        }
+        );
       }
-    );
-    this.input.on(
-      Phaser.Input.Events.POINTER_OUT,
-      (
-        pointer: Phaser.Input.Pointer,
-        justOut: Phaser.GameObjects.GameObject[]
-      ) => {
-        //was it a card?
-        const cardOver = this.GetCardFromGameObject(justOut[0]);
-        if (cardOver) {
-          const cardView = this.cardViewMap.get(cardOver.id())!;
-          if (cardOver.currentZone.id == CardZoneID.HAND) {
-            this.animationController.ResetTableCards(this.gameState);
-            this.add.tween({
-              targets: justOut[0],
-              y: cardView.GetTargetPos().y,
-              duration: 400,
-              ease: Phaser.Math.Easing.Back.Out,
-            });
-          }
-        }
+    }
+  }
+  
+  public OnDragLeave(target: GameObject) {
+    if (target == this.tableView.dropZone) {
+      console.log("drag leave table");
+      for (const card of this.gameState.table.GetCards()) {
+        this.add.tween({
+          targets: this.cardViewMap.get(card.id())!,
+          angle: 0,
+          duration: 400,
+          ease: Phaser.Math.Easing.Back.Out,
+        });
       }
-    );
-    this.input.on(
-      Phaser.Input.Events.DRAG_START,
-      (
-        pointer: Phaser.Input.Pointer,
-        gameObject: Phaser.GameObjects.GameObject
-      ) => {
-        const cardClicked = this.GetCardFromGameObject(gameObject)
-        if(cardClicked){
-          if(!this.gameState.playerHands.get(0)!.GetCards().some(card=>card.id()==cardClicked.id())){
-            return;
-          }
-          console.log("hand cards: " + this.gameState.playerHands.get(0)!.GetCards().map(card=>card.toString()).join(", "))
-          dragStartTime = this.time.now;
-          this.animationController.ResetTableCards(this.gameState);
-          this.heldCardId = cardClicked.id();
-          this.dragLayer.add(gameObject);
-          console.log("clicked on" + cardClicked.id());
-        }
+    }
+  }
+  
+  public OnDrag(dragX: number, dragY: number) {
+    if (this.heldCardId) {
+      const cardView = this.cardViewMap.get(this.heldCardId) ?? null;
+      if (cardView) {
+        cardView.setPosition(dragX, dragY);
       }
-    );
-    this.input.on(
-      Phaser.Input.Events.DRAG_ENTER,
-      (
-        pointer: Phaser.Input.Pointer,
-        gameObject: Phaser.GameObjects.GameObject,
-        target: Phaser.GameObjects.GameObject
-      ) => {
-        if (target == this.tableView.dropZone) {
-          if (this.heldCardId) {
-            this.animationController.AnimateTableScoopsForCard(
-              this.heldCardId,
-              this.gameState
-            );
-          }
-        }
-      }
-    );
-    this.input.on(
-      Phaser.Input.Events.DRAG_LEAVE,
-      (
-        pointer: Phaser.Input.Pointer,
-        gameObject: Phaser.GameObjects.GameObject,
-        target: Phaser.GameObjects.GameObject
-      ) => {
-        if (target == this.tableView.dropZone) {
-          console.log("drag leave table");
-          for (const card of this.gameState.table.GetCards()) {
-            this.add.tween({
-              targets: this.cardViewMap.get(card.id())!,
-              angle: 0,
-              duration: 400,
-              ease: Phaser.Math.Easing.Back.Out,
-            });
-          }
-        }
-      }
-    );
-    this.input.on(
-      "drag",
-      (
-        pointer: Phaser.Input.Pointer,
-        gameObject: Phaser.GameObjects.GameObject,
-        dragX: number,
-        dragY: number
-      ) => {
-        if (this.heldCardId) {
-          const cardView = this.cardViewMap.get(this.heldCardId) ?? null;
-          if (cardView) {
-            cardView.setPosition(dragX, dragY);
-          }
-        }
-      }
-    );
+    }
+  }
+  public OnDragEnd(isClick: boolean) {
     const returnHeldCard = () => {
       if (this.heldCardId) {
         const card = this.gameState.GetCardFromId(this.heldCardId)!;
@@ -524,65 +527,35 @@ export class Game extends Scene {
         this.heldCardId = null;
       }
     };
-    this.input.on(
-      Phaser.Input.Events.DRAG_END,
-      (
-        pointer: Phaser.Input.Pointer,
-        gameObject: Phaser.GameObjects.GameObject,
-        dragX: number,
-        dragY: number
-      ) => {
-        if (this.heldCardId) {
-          if (dragStartTime) {
-            const dragTime = this.time.now - dragStartTime;
-            //maybe check the distance traveled here
-            if (dragTime < 300) {
-              //register as a click
-              if (!this.AttemptMoveCardToTable(this.heldCardId)) {
-                returnHeldCard();
-              }
-            } else {
-              returnHeldCard();
-            }
-            this.heldCardId = null;
-          } else {
-            console.error(
-              "drag start time is null in drag end, this should be impossible"
-            );
-          }
+    console.log("drag end")
+    if (this.heldCardId) {
+      //maybe check the distance traveled here
+      if (isClick) {
+        //register as a click
+        const gameChange = this.AttemptMoveCardToTable(this.heldCardId);
+        if (!gameChange) {
+          returnHeldCard();
         }
+      } else {
+        returnHeldCard();
       }
-    );
-    this.input.on(
-      "dragenter",
-      function (
-        pointer: Phaser.Input.Pointer,
-        gameObject: Phaser.GameObjects.GameObject,
-        dropzone: Phaser.GameObjects.GameObject
-      ) {}
-    );
-
-    this.input.on(
-      Phaser.Input.Events.DROP,
-      async (
-        pointer: Phaser.Input.Pointer,
-        gameObject: Phaser.GameObjects.GameObject,
-        dropzone: Phaser.GameObjects.GameObject
-      ) => {
-        if (this.heldCardId) {
-          if (dropzone == this.tableView.dropZone) {
-            const gameChange = this.AttemptMoveCardToTable(this.heldCardId);
-            if (gameChange) {
-              this.heldCardId = null;
-            } else {
-              console.log(
-                "cannot do a move with that drop, not setting held card to null"
-              );
-            }
-          }
+      this.heldCardId = null;
+    }
+  }
+  public OnDrop(dropzone:GameObject){
+    if (this.heldCardId) {
+      if (dropzone == this.tableView.dropZone) {
+        const gameChange = this.AttemptMoveCardToTable(this.heldCardId);
+        if (gameChange) {
+          this.heldCardId = null;
+        } else {
+          console.log(
+              "cannot do a move with that drop, not setting held card to null"
+          );
         }
+        
       }
-    );
+    }
   }
 
   onMouseDown() {}
@@ -644,6 +617,8 @@ export class Game extends Scene {
         return this.handViews.get(zonePosition.index)!;
       case CardZoneID.PILE:
         return this.pileViews.get(zonePosition.index)!;
+      case CardZoneID.END_GAME:
+        return this.endGameView;
     }
   }
   GetPilePosition(index: number, gameState: GameState) {

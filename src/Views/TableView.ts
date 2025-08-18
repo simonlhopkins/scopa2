@@ -19,7 +19,7 @@ class TableView extends Phaser.GameObjects.Container implements ICardZoneView {
     const debugRect = this.scene.add
       .rectangle(0, 0, this.dropZone.width, this.dropZone.height)
       .setStrokeStyle(5, 0xff0000);
-    this.add(debugRect);
+    // this.add(debugRect);
   }
   GetPosition(): Phaser.Math.Vector2 {
     return new Phaser.Math.Vector2(this.x, this.y);
@@ -34,6 +34,7 @@ class TableView extends Phaser.GameObjects.Container implements ICardZoneView {
     const offsetX = (spotNum % 2) * 150;
     const offsetY = Math.floor(spotNum / 2) * 60;
     cardView.SetTargetPosition(this.x + offsetX - 70, this.y + offsetY - 80);
+    // console.log()
     // cardView.setDepth(spotNum);
   }
   RemoveCardView(cardView: CardView): void {

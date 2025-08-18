@@ -7,6 +7,7 @@ export enum CardZoneID {
   HAND,
   PILE,
   TABLE,
+  END_GAME
 }
 
 export class ZonePosition {
@@ -32,6 +33,8 @@ export class ZonePosition {
         return "pile";
       case CardZoneID.TABLE:
         return "table";
+      case CardZoneID.END_GAME:
+        return "end game";
     }
   }
 }
@@ -51,6 +54,9 @@ class CardZone {
   public GetCards() {
     return this.cards;
   }
+  public HasCard(card:Card){
+    return this.cards.some(item=>item.Equals(card));
+  }
   public GetIndexOfCard(cardId: string) {
     const index = this.cards.findIndex((card) => card.id() == cardId);
     return index < 0 ? null : index;
@@ -61,6 +67,12 @@ class CardZone {
       return null;
     }
     return cardPopped;
+  }
+  PeekTop(): Card | null {
+    if (this.cards.length == 0) {
+      return null;
+    }
+    return this.cards[this.cards.length - 1];
   }
   TakeCard(card: Card): Card | null {
     const foundCard = this.cards.find(

@@ -1,22 +1,16 @@
-import {CardId} from "../Game/Card";
-import {CardZoneID, ZonePosition} from "../Game/CardZone";
+import {CardId, Suit} from "../Game/Card";
+import CardZone, {CardZoneID, ZonePosition} from "../Game/CardZone";
 import GameChange from "../Game/GameChange";
 import GameState from "../Game/GameState";
 import CardView from "../Views/CardView";
 import HandView from "../Views/HandView";
 import ICardZoneView from "../Views/ICardZoneView";
 import CardMove from "../Game/CardMove.ts";
-import CardFlip, {Orientation} from "../Game/CardFlip.ts";
-import TweenChain = Phaser.Tweens.TweenChain;
+import CardFlip from "../Game/CardFlip.ts";
 import AnimationHelpers from "./AnimationHelpers.ts";
-
-async function WaitUntilTweensFinish(tweens: Phaser.Tweens.Tween[]) {
-  const tweenPromises = tweens.map(
-    (tween) => new Promise<void>((resolve) => tween.once("complete", resolve))
-  );
-  // Wait for all tweens to complete
-  await Promise.all(tweenPromises);
-}
+import TweenChain = Phaser.Tweens.TweenChain;
+import Tween = Phaser.Tweens.Tween;
+import Vector2 = Phaser.Math.Vector2;
 
 class AnimationController {
   private scene: Phaser.Scene;
@@ -24,6 +18,9 @@ class AnimationController {
   private pileViews: Map<number, ICardZoneView>;
   private cardViewMap: Map<CardId, CardView>;
   tweensCanceled = 0;
+  onMoveTweensCompleteCallbacks: (() => void)[] = [];
+  private tweensForLatestGameChange: (Phaser.Tweens.Tween | Phaser.Tweens.TweenChain)[] = [];
+
   //   views:
 
   //animation state
@@ -58,8 +55,13 @@ class AnimationController {
       console.error("Card already has a move tween: ", cardId);
     }
     this.moveTweens.set(cardId, tween);
-    tween.on("complete", () => {
+    this.tweensForLatestGameChange.push(tween);
+    // this.cardViewMap.get(cardId)!.ToggleDown();
+    tween.once("complete", () => {
       this.moveTweens.delete(cardId);
+      if(this.moveTweens.size==0){
+        this.flushMoveTweenCompleteCallbacks();
+      }
     });
 
     return tween;
@@ -87,6 +89,7 @@ class AnimationController {
   DoDeckToTableAnimation(deckToTableMoves: CardMove[]) {
     deckToTableMoves.forEach((move, i) => {
       const cardView = this.cardViewMap.get(move.card.id())!;
+      cardView.ToggleDown();
       const toPos = cardView.GetTargetPos();
       this.cardLayer.bringToTop(cardView)
       this.AddMoveTween(
@@ -103,10 +106,11 @@ class AnimationController {
     });
   }
   DoDealAnimation(dealtMoves: CardMove[]) {
+    const MOVE_DURATION = 300;
+    const DELAY_BETWEEN_CARDS = 100;
     for (let i = 0; i < dealtMoves.length; i++) {
       const cardView = this.cardViewMap.get(dealtMoves[i].card.id())!;
       this.cardLayer.bringToTop(cardView)
-      //dealtMoves[i].toPosition.AddCardView
       const toPos = cardView.GetTargetPos();
       this.AddMoveTween(
         dealtMoves[i].card.id(),
@@ -114,8 +118,8 @@ class AnimationController {
           targets: cardView,
           x: toPos.x,
           y: toPos.y,
-          duration: 500,
-          delay: i * 200,
+          duration: MOVE_DURATION,
+          delay: i * DELAY_BETWEEN_CARDS,
           ease: Phaser.Math.Easing.Sine.Out,
           onComplete: () => {
             cardView.AnimateToTargetScale();
@@ -162,13 +166,13 @@ class AnimationController {
     this.AddMoveTween(fromHandCardView.id(), this.scene.tweens.chain({
       tweens: handCardTweens
     }));
-    this.cardLayer.bringToTop(fromHandCardView);
     
     for(let i=0; i< tableCardViews.length; i++){
-      
+      const targetScoopedCard = tableCardViews[i];
+      this.cardLayer.bringToTop(targetScoopedCard);
       const tweens:Phaser.Types.Tweens.TweenBuilderConfig[] = tableCardViews.slice(i+1).map(cardView=>{
         return {
-          targets: tableCardViews[i],
+          targets: targetScoopedCard,
           x: cardView.x,
           y: cardView.y,
           duration: MOVE_TIME,
@@ -177,9 +181,9 @@ class AnimationController {
       })
       tweens.push(
           {
-            targets: tableCardViews[i],
-            x: tableCardViews[i].GetTargetPos().x,
-            y: tableCardViews[i].GetTargetPos().y,
+            targets: targetScoopedCard,
+            x: targetScoopedCard.GetTargetPos().x,
+            y: targetScoopedCard.GetTargetPos().y,
             duration: MOVE_TIME,
             ease: Phaser.Math.Easing.Back.Out,
             angle: 0
@@ -187,19 +191,21 @@ class AnimationController {
       );
       if(isScopa){
         tweens.push({
-          targets: tableCardViews[i],
+          targets: targetScoopedCard,
           angle: 360,
           duration: 500,
           ease: Phaser.Math.Easing.Back.Out,
         })
       }
       tweens[0].delay = (i + 1) * MOVE_TIME;
-      this.AddMoveTween(tableCardViews[i].id(), this.scene.tweens.chain({
+      this.AddMoveTween(targetScoopedCard.id(), this.scene.tweens.chain({
         tweens
       }));
     }
-    
-    
+    this.cardLayer.bringToTop(fromHandCardView);
+
+
+
   }
   private MoveAllCardsToTargetPos(gameChange: GameChange){
     gameChange
@@ -211,28 +217,66 @@ class AnimationController {
       });
   }
   
-  AnimateGameChange(gameChange: GameChange, gameState: GameState) {
+  private DoEndGameAnimation(moves: CardMove[]) {
+    const cardViewsToAnimate = moves.map((move) => this.cardViewMap.get(move.card.id())!);
+    
+    cardViewsToAnimate.sort((a, b) => {
+        return a.GetTargetPos().y - b.GetTargetPos().y;
+    })
+    
+    const DURATION = 1000;
+    const DELAY = 30;
+    cardViewsToAnimate
+        .forEach((cardView, i) => {
+          const currentPosition = cardView.GetCurrentPos();
+          const endPoint = cardView.GetTargetPos();
+          let t = { value: 0 };
+          const spline = AnimationHelpers.CreateLoopDeLoopSpline(currentPosition, endPoint, 100);
+            this.cardLayer.bringToTop(cardView);
+            //move the card to the end position with a spline
+          this.AddMoveTween(cardView.id(), this.scene.add.tween({
+            targets: t,
+            delay: i * DELAY,
+            value: 1,
+            duration: DURATION,
+            ease: Phaser.Math.Easing.Sine.InOut,
+            onUpdate: () => {
+              const point = spline.getPoint(t.value);
+              cardView.setPosition(point.x, point.y);
+            },
+          }))
+    })
+  }
+  private GetZonesEffectedByGameChange(gameChange: GameChange, zoneId:CardZoneID): Set<ZonePosition> {
+    return new Set(
+        gameChange
+            .GetMoves()
+            .filter(
+                (move) =>
+                    move.toPosition.id == zoneId ||
+                    move.fromPosition.id == zoneId
+            )
+            .map((item) => item.toPosition)
+    );
+  }
+  AnimateGameChange(gameChange: GameChange, gameState: GameState): (Tween|TweenChain)[] {
     this.tweensCanceled = 0;
+    this.tweensForLatestGameChange = [];
     this.ResetTableCards(gameState);
     //force complete tweens on cards involved in moving
     
     const cardIDsMoved = new Set(
       gameChange.GetMoves().map((move) => move.card.id())
     );
+    //force stop any tweens on cards that are moving that are involved in this board change
     cardIDsMoved.forEach((id) => {
       this.ForceCompleteMoveTweensOnCard(id);
     });
-    const handsEffected = new Set(
-      gameChange
-        .GetMoves()
-        .filter(
-          (move) =>
-            move.toPosition.id == CardZoneID.HAND ||
-            move.fromPosition.id == CardZoneID.HAND
-        )
+    const cardIdsMovingNotInvolvedInGameChange = new Set(this.moveTweens.entries());
 
-        .map((item) => item.toPosition.index)
-    );
+    console.log(`size of move tween map after cancelations:  ${Array.from(this.moveTweens.entries()).length}`)
+    
+    
 
     //scale down cards that are leaving hands
     gameChange
@@ -255,11 +299,20 @@ class AnimationController {
     //separate out into whichever player it is for
     const scoopMap = new Map<number, CardMove[]>();
     for (const move of toPileMoves) {
-      const playerNum = move.toPosition.index;
-      if (!scoopMap.get(playerNum)) {
-        scoopMap.set(playerNum, []);
+      //make sure these cards are included in one of the scoop results, it could be a non scoop move where cards just happen to move to the pile
+      if(gameChange.scoopResults
+          .some(scoop=>
+              scoop.tableCards.some(card=>card.Equals(move.card) || scoop.handCard.Equals(move.card))
+          )
+      ){
+        const playerNum = move.toPosition.index;
+
+        if (!scoopMap.get(playerNum)) {
+          scoopMap.set(playerNum, []);
+        }
+        scoopMap.get(move.toPosition.index)!.push(move);
       }
-      scoopMap.get(move.toPosition.index)!.push(move);
+      
     }
 
     for (const [key, moves] of scoopMap) {
@@ -267,7 +320,6 @@ class AnimationController {
         scoopMap.delete(key);
       }
     }
-
     for (const [player, scoopMoves] of scoopMap) {
       //move each of the cards to the index based on their capture arr, then move into the pile.
       this.DoScoopMoveAnimation(scoopMoves);
@@ -293,7 +345,10 @@ class AnimationController {
       );
     this.DoDeckToTableAnimation(deckToTableMoves);
     //animate cards in hands to the correct positions
-
+    
+    const endGameMoves = gameChange.GetMoves().filter(move=>move.toPosition.id == CardZoneID.END_GAME);
+    this.DoEndGameAnimation(endGameMoves);
+    
     const dealtMoves = gameChange
         .GetMoves()
         .filter(
@@ -303,17 +358,34 @@ class AnimationController {
         );
 
     this.DoDealAnimation(dealtMoves);
-
+    
     //animate other hand cards back to their target position that were NOT involved in the board move
-    for (const handID of handsEffected) {
+    const handsEffected = this.GetZonesEffectedByGameChange(gameChange, CardZoneID.HAND);
+    
+    for (const hand of handsEffected) {
       gameState
-        .GetCardZoneFromPosition(new ZonePosition(CardZoneID.HAND, handID))!
+        .GetCardZoneFromPosition(hand)!
         .GetCards()
         .filter((card) => !cardIDsMoved.has(card.id()))
         .map((card) => this.cardViewMap.get(card.id())!)
         .forEach((cardView) => {
-          cardView.AnimateToTargetPos();
+          this.ForceCompleteMoveTweensOnCard(cardView.id());
+          this.AddMoveTween(cardView.id(), cardView.AnimateToTargetPos())
+         
         });
+    }
+
+    const endGameZonesEffected = this.GetZonesEffectedByGameChange(gameChange, CardZoneID.END_GAME);
+    for (const endGameZone of endGameZonesEffected) {
+      gameState
+          .GetCardZoneFromPosition(endGameZone)!
+          .GetCards()
+          .filter((card) => !cardIDsMoved.has(card.id()))
+          .map((card) => this.cardViewMap.get(card.id())!)
+          .forEach((cardView) => {
+            this.ForceCompleteMoveTweensOnCard(cardView.id());
+            this.AddMoveTween(cardView.id(), cardView.AnimateToTargetPos())
+          });
     }
     //animate all of the cards of the handviews that were not effected by this board change
     //this is happening too early because it when the animation of the to deck happens, the game state is already updated to be dealt
@@ -367,8 +439,12 @@ class AnimationController {
         this.ForceCompleteMoveTweensOnCard(move.card.id());
       }
     });
-    console.log("num animations canceled: ", this.tweensCanceled);
+    
+    // newMoveTweens
+    return this.tweensForLatestGameChange;
   }
+
+  
   
   private AnimateCardFlips(cardFlips: CardFlip[]){
     cardFlips.forEach((flip => {
@@ -390,7 +466,10 @@ class AnimationController {
     }));
   }
   public ResetTableCards(gameState: GameState) {
-    for (const card of gameState.table.GetCards()) {
+    const sortedTableCards = gameState.table.GetCards().sort((a, b) => {
+      return this.cardViewMap.get(a.id())!.GetTargetPos().y - this.cardViewMap.get(b.id())!.GetTargetPos().y;
+    })
+    for (const card of sortedTableCards) {
       this.cardLayer.bringToTop(this.cardViewMap.get(card.id())!);
       this.scene.add.tween({
         targets: this.cardViewMap.get(card.id())!,
@@ -399,6 +478,27 @@ class AnimationController {
         ease: Phaser.Math.Easing.Back.Out,
       });
     }
+  }
+
+  AddOnMoveTweensCompleteCallback (callback: ()=>void) {
+    this.onMoveTweensCompleteCallbacks.push(callback)
+    if(this.moveTweens.size == 0) {
+      this.flushMoveTweenCompleteCallbacks();
+    }
+  }
+  
+  private flushMoveTweenCompleteCallbacks() {
+    this.onMoveTweensCompleteCallbacks.forEach((callback) => callback());
+    this.onMoveTweensCompleteCallbacks = [];
+  }
+  
+  AnimateHoverOnEndGame(endGameZone: CardZone) {
+    
+    endGameZone.GetCards().forEach((card) => {
+      if(card.suit== Suit.COIN){
+        this.cardViewMap.get(card.id())!.ToggleUp()
+      }
+    });
   }
   AnimateTableScoopsForCard(cardId: CardId, gameState: GameState) {
     const card = gameState.GetCardFromId(cardId);

@@ -15,6 +15,11 @@ import AnimationContext from "../Animation/AnimationContext.ts";
         this.toPosition = _toPosition;
         this.fromPosition = _fromPosition;
     }
+    public Equals(other: CardMove): boolean {
+        return this.card.Equals(other.card) &&
+            this.fromPosition.Equals(other.fromPosition) &&
+            this.toPosition.Equals(other.toPosition);
+    }
     reverse():CardMove{
         const cardmove = new CardMove(
             this.card,

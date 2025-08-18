@@ -12,11 +12,19 @@ class GameStateHelpers{
         const playerTurn = 0;
         
         const gameChange = new GameChange(playerTurn,currentState.GetPlayerTurn(),playerTurn);
-        const settaBella = currentState.deck.TakeCard(new Card(Suit.COIN, 7))!;
-        const sevenClubs = currentState.deck.TakeCard(new Card(Suit.CLUB, 7))!;
-        gameChange.AddMove(currentState.table.PushTop(settaBella));
-        gameChange.AddMove(currentState.playerHands.get(0)!.PushTop(sevenClubs));
-        gameChange.Append(currentState.DealCards())
+        const settaBella = currentState.GetCardFromId(new Card(Suit.COIN, 7).id())!;
+        const sevenClubs = currentState.GetCardFromId(new Card(Suit.CLUB, 7).id())!;
+        const setteBellaMove = currentState.SwapCards(settaBella, currentState.table.PeekTop()!);
+        const sevenClubsMove = currentState.SwapCards(sevenClubs, currentState.playerHands.get(0)!.PeekTop()!);
+        gameChange.Append(setteBellaMove);
+        gameChange.Append(sevenClubsMove);
+        for(let card of currentState.table.GetCards()){
+            if(card.id() != settaBella.id()){
+                gameChange.AddMove(currentState.playerPiles.get(0)!.PushTop(currentState.table.TakeCard(card)!));
+            }
+        }
+        
+        
         gameChange.AddFlip(settaBella.flipFaceUp());
         gameChange.AddFlip(sevenClubs.flipFaceUp());
         return gameChange;
@@ -25,15 +33,27 @@ class GameStateHelpers{
     public static PreEndGameState(currentState: GameState): GameChange {
         const playerTurn = 0;
         const gameChange = new GameChange(playerTurn, currentState.GetPlayerTurn(), playerTurn);
-        gameChange.Append(currentState.InitialTableCards());
-        gameChange.Append(currentState.DealCards());
+        // gameChange.Append(currentState.InitialTableCards());
+        // gameChange.Append(currentState.DealCards());
         const deckToPileCards:CardMove[] = [];
+        const playerPile = currentState.playerPiles.get(0)!;
         while(currentState.deck.GetCards().length>0){
-            deckToPileCards.push(currentState.playerPiles.get(0)!.PushTop(currentState.deck.TakeTop()!));
+            deckToPileCards.push(playerPile.PushTop(currentState.deck.TakeTop()!));
         }
         gameChange.AddMoves(deckToPileCards);
         gameChange.AddFlips(deckToPileCards.map(move=>move.card.flipFaceDown()))
         
+        //thin out the hands
+        const handToPileCards:CardMove[] = [];
+        for(const playerHand of currentState.playerHands.values()){
+            while(playerHand.GetCards().length > 1){
+                handToPileCards.push(playerPile.PushTop(playerHand.TakeTop()!));
+            }
+        }
+        gameChange.AddMoves(handToPileCards);
+        gameChange.AddFlips(handToPileCards.map(move=>move.card.flipFaceDown()))
+
+
         return gameChange;
     }
 }

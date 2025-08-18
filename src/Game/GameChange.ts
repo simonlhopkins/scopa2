@@ -12,10 +12,21 @@ class GameChange {
   fromPlayer: number;
   toPlayer: number;
   scoopResults: ScoopResult[] = [];
+  isScopa: boolean = false;
   constructor(_playerTurn: number, _fromPlayer: number, _toPlayer: number) {
     this.playerTurn = _playerTurn;
     this.fromPlayer = _fromPlayer;
     this.toPlayer = _toPlayer;
+  }
+  public Equals(other:GameChange){
+    return this.playerTurn === other.playerTurn &&
+              this.fromPlayer === other.fromPlayer &&
+              this.toPlayer === other.toPlayer &&
+              this.cardMoves.length === other.cardMoves.length &&
+              this.cardFlips.length === other.cardFlips.length &&
+              this.cardMoves.every((move, index) => move.Equals(other.cardMoves[index])) &&
+              this.cardFlips.every((flip, index) => flip.Equals(other.cardFlips[index]));
+    
   }
   public AddScoopResult(scoopResult: ScoopResult) {
     this.scoopResults.push(scoopResult);
@@ -37,9 +48,6 @@ class GameChange {
   }
   public GetFlips() {
     return this.cardFlips;
-  }
-  public GetCardViews(){
-    return this.cardMoves.map((move) => move.card);
   }
   public GetCardIds(){
     return this.cardMoves.map((move) => move.card.id());

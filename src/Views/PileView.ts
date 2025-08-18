@@ -11,6 +11,7 @@ class PileView extends Phaser.GameObjects.Container implements ICardZoneView {
   GetPosition(): Phaser.Math.Vector2 {
     return new Phaser.Math.Vector2(this.x, this.y);
   }
+  
 }
 
 export default PileView;

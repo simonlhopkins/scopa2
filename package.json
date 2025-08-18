@@ -23,6 +23,7 @@
     "dependencies": {
         "@types/serialize-javascript": "^5.0.4",
         "phaser": "^3.87.0",
+        "phaser3-rex-plugins": "^1.80.16",
         "serialize-javascript": "^6.0.2"
     }
 }
