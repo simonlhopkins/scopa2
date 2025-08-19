@@ -1,4 +1,5 @@
 import TweenChain = Phaser.Tweens.TweenChain;
+import Util from "../Util.ts";
 
 class AnimationHelpers{
     
@@ -31,9 +32,7 @@ class AnimationHelpers{
                     });
                 })
             );
-            await new Promise<void>(resolve => {
-                setTimeout(resolve, delayAfter);
-            })
+            await Util.wait(delayAfter);
             resolve();
         })
         

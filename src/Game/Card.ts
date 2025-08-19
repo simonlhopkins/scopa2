@@ -2,10 +2,10 @@ import { ZonePosition } from "./CardZone";
 import CardFlip, {Orientation} from "./CardFlip.ts";
 
 export enum Suit {
-  SWORD,
-  CUP,
-  COIN,
-  CLUB,
+  CUP = 0,
+  SWORD = 1,
+  CLUB = 2,
+  COIN = 3,
 }
 export type CardId = string & { __brand: "CARD_ID" };
 

@@ -284,6 +284,7 @@ class AnimationController {
       .filter((item) => item.fromPosition.id == CardZoneID.HAND)
       .forEach((cardMove) => {
         const cardView = this.cardViewMap.get(cardMove.card.id())!;
+        cardView.ToggleDown();
         cardView.SetTargetScale(1, 1);
       });
     //we know that there was a scoop on this gamechange?

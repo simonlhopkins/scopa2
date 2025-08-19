@@ -18,6 +18,7 @@ import AnimationHelpers from "../Animation/AnimationHelpers.ts";
 import EndGameCardZoneView from "../Views/EndGameCardZoneView.ts";
 import PopupController from "../PopupController.ts";
 import GameObject = Phaser.GameObjects.GameObject;
+import Util from "../Util.ts";
 
 export class Game extends Scene implements IInputEventHandler {
   camera: Phaser.Cameras.Scene2D.Camera;
@@ -196,19 +197,20 @@ export class Game extends Scene implements IInputEventHandler {
     const resultingTweens = this.animationController.AnimateGameChange(gameChange, this.gameState);
     localStorage.setItem("saveData", JSON.stringify(this.gameState.toJson()));
     //at the end, determine if it is time to change the player turn
-    if(gameChange.fromPlayer != gameChange.toPlayer && gameChange.toPlayer!=0){
+    if(gameChange.fromPlayer != gameChange.toPlayer && gameChange.toPlayer != 0){
         // this.OnPlayerTurnChange();
-      const delayAfter = gameChange.fromPlayer == 0 ? 500: 1000;
+      const delayAfter = gameChange.fromPlayer == 0 ? 500: 700;
       AnimationHelpers.WaitForTweensToComplete(resultingTweens, delayAfter).then(()=>{
+        console.log("play")
         //only progress if the move that was played is the same as the last move in history
         if(gameChange.Equals(this.history[this.history.length-1])){
           this.PlayBestMoveForCurrentPlayer();
         }else {
           console.log("NOT EQUAL ANYMORE!!")
         }
-        
       })
     }
+    return resultingTweens;
   }
 
   Undo():void {
@@ -300,6 +302,7 @@ export class Game extends Scene implements IInputEventHandler {
       return null;
     }
     this.gameLayer.add(this.cardViewMap.get(cardId)!);
+    //TODO: I can also choose to wait for this to resolve and then deal out more cards
     const gameChange = this.gameState.MoveCard(
       cardId,
       new ZonePosition(CardZoneID.TABLE, 0),
@@ -307,12 +310,9 @@ export class Game extends Scene implements IInputEventHandler {
     );
     
     if (gameChange) {
-      if (this.gameState.table.GetCards().length == 0) {
-      }
       this.AddToHistory(gameChange);
       this.ApplyChange(gameChange);
       //end game anim
-      console.log("attempting card move")
       if (this.gameState.IsGameOver()) {
         console.log("GAME OVER!!!");
         const lastPlayerToScoop = this.GetLastPersonToScoopCards();
@@ -323,7 +323,6 @@ export class Game extends Scene implements IInputEventHandler {
           lastPlayerToScoop != null,
           "last player to scoop should not be null moving end game cards to player 0"
         );
-        console.log("endgame move: " + endGameMove.toString());
         //this might suck, revisionist history smh
         const lastPlay = this.history.pop()!;
         lastPlay.Append(endGameMove);
@@ -338,7 +337,9 @@ export class Game extends Scene implements IInputEventHandler {
                 this.ApplyChange(endGameMove);
                 this.animationController.AddOnMoveTweensCompleteCallback(()=>{
                   // this.OnGameOver();
-                  this.scene.launch(SceneKeys.EndOfGame, this.gameState);
+                  Util.wait(500).then(()=>{
+                    this.scene.launch(SceneKeys.EndOfGame, this.gameState);
+                  });
                   // this.ApplyChange(this.gameState.MoveCardsToEndGameState());
                 })
               },
@@ -409,9 +410,6 @@ export class Game extends Scene implements IInputEventHandler {
   public OnPointerOverGameObject(gameobject: GameObject){
     const cardOver = this.GetCardFromGameObject(gameobject);
     if (cardOver) {
-      //and not moving
-      // this.ApplyChange(this.gameState.FlipCardFaceUp(cardOver.id()))
-
       this.OnCardHovered(cardOver);
     }
   }
@@ -448,7 +446,6 @@ export class Game extends Scene implements IInputEventHandler {
           console.error(`couldn't find card view for card ${cards.id()}`);
         }
       }
-        
     }
   }
   public OnPointerExitGameObject(gameobject: GameObject){

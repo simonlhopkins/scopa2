@@ -24,7 +24,7 @@ class CardView extends Phaser.GameObjects.Container {
         this.getBounds().setPosition(0,0),
       Phaser.Geom.Rectangle.Contains
     );
-    this.scene.input.enableDebug(this);
+    // this.scene.input.enableDebug(this);
   }
   SetTargetScale(x: number, y: number) {
     this.targetScale.set(x, y);

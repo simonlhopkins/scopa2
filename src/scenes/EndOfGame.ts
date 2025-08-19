@@ -92,8 +92,10 @@ class EndOfGame extends Phaser.Scene {
                 column: 4, row: 4
             },
         })
-        
-        for(const card of cards){
+        const sortedCards = cards.sort((a, b) => {
+            return b.suit- a.suit || a.rank - b.rank;
+        });
+        for(const card of sortedCards){
             const container = this.rexUI.add.sizer()
             const cardView = new CardView(this, card);
             cardView.disableInteractive();
