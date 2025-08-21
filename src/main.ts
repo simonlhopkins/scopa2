@@ -1,7 +1,8 @@
 import { Boot } from "./scenes/Boot";
 import { Game as MainGame } from "./scenes/Game";
+import EndOfGame from "./scenes/EndOfGame";
 import { Preloader } from "./scenes/Preloader";
-
+import RexUIPlugin from 'phaser3-rex-plugins/templates/ui/ui-plugin.js';
 import { Game, Types } from "phaser";
 
 //  Find out more information about the Game Config at:
@@ -17,7 +18,14 @@ const config: Types.Core.GameConfig = {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
-  scene: [Boot, Preloader, MainGame],
+  plugins: {
+    scene: [{
+      key: 'rexUI',
+      plugin: RexUIPlugin,
+      mapping: 'rexUI'
+    }]
+  },
+  scene: [Boot, Preloader, MainGame, EndOfGame],
 };
 
 export default new Game(config);

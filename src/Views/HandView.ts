@@ -29,7 +29,6 @@ class HandView extends Phaser.GameObjects.Container implements ICardZoneView {
   private setCardTargetPositions() {
     for (let i = 0; i < this.cardViews.length; i++) {
       this.cardViews[i].SetTargetPosition(this.x + i * 40, this.y);
-      this.cardViews[i].setDepth(i);
     }
   }
   GetPosition(): Phaser.Math.Vector2 {

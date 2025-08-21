@@ -4,8 +4,8 @@ export default class Util {
   static cantorPair(x: number, y: number) {
     return ((x + y) * (x + y + 1)) / 2 + y;
   }
-  static wait(seconds: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, seconds * 1000));
+  static wait(milliseconds: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, milliseconds));
   }
 
   //stolen from chat

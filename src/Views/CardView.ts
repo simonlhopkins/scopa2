@@ -1,35 +1,30 @@
-import Card, { CardId } from "../Game/Card";
+import Card from "../Game/Card";
+import {Orientation} from "../Game/CardFlip.ts";
+import AnimationHelpers from "../Animation/AnimationHelpers.ts";
 
 class CardView extends Phaser.GameObjects.Container {
   private cardSprite: Phaser.GameObjects.Sprite;
-  private cardbackSprite: Phaser.GameObjects.Sprite;
-  private cardParent: Phaser.GameObjects.Container;
-
   card: Card;
   flipTween: Phaser.Tweens.TweenChain | null = null;
-  private isFlipped = false;
+  toggleTween: Phaser.Tweens.Tween | null = null;
+  isToggled:boolean = false;
   private targetPosition: Phaser.Math.Vector2 = new Phaser.Math.Vector2(0, 0);
   private targetScale: Phaser.Math.Vector2 = new Phaser.Math.Vector2(1, 1);
   private sizeScaler = 1;
   constructor(scene: Phaser.Scene, card: Card) {
     super(scene);
     this.card = card;
-    this.cardParent = this.scene.add.container();
-    this.add(this.cardParent);
     this.cardSprite = this.scene.add
       .sprite(0, 0, Card.GetTextureName(card))
       .setOrigin(0.5, 0.5)
       .setScale(3);
-
-    this.cardbackSprite = this.scene.add
-      .sprite(0, 0, "marioCardback")
-      .setScale(0.04);
-    this.cardParent.add([this.cardSprite, this.cardbackSprite]);
-    this.cardbackSprite.alpha = 0;
+    this.add(this.cardSprite);
+    this.setSize(this.cardSprite.getBounds().width, this.cardSprite.getBounds().height);
     this.setInteractive(
-      this.cardSprite.getBounds(),
+        this.getBounds().setPosition(0,0),
       Phaser.Geom.Rectangle.Contains
     );
+    // this.scene.input.enableDebug(this);
   }
   SetTargetScale(x: number, y: number) {
     this.targetScale.set(x, y);
@@ -43,35 +38,66 @@ class CardView extends Phaser.GameObjects.Container {
   GetTargetPos() {
     return this.targetPosition;
   }
-  Flip(forceFlip?: boolean) {
-    if (this.isFlipped == forceFlip) {
-      console.log("anim skipped");
-      return;
+  GetCurrentPos(){
+    return new Phaser.Math.Vector2(this.x, this.y);
+  }
+  public ToggleUp(){
+    console.log("toggling up", this.card.id()); 
+    if(this.isToggled) return;
+    if(this.toggleTween){
+      AnimationHelpers.ForceFinishTween(this.toggleTween);
     }
-    this.isFlipped = forceFlip || !this.isFlipped;
+    this.isToggled = true;
+    this.toggleTween = this.scene.add.tween({
+      targets: this.cardSprite,
+      y: - 20,
+      duration: 400,
+      ease: Phaser.Math.Easing.Back.Out,
+      onComplete: () => {
+        this.toggleTween = null;
+      }
+    });
+  }
+  public ToggleDown(){
+    if(!this.isToggled) return;
+    if(this.toggleTween){
+      AnimationHelpers.ForceFinishTween(this.toggleTween);
+    }
+    this.isToggled = false;
+    this.toggleTween = this.scene.add.tween({
+      targets: this.cardSprite,
+      y: 0,
+      duration: 400,
+      ease: Phaser.Math.Easing.Back.Out,
+      onComplete: () => {
+        this.toggleTween = null;
+      }
+    });
+  }
+  public DoFlipAnimation(toOrientation: Orientation) {
     if (this.flipTween) {
-      this.flipTween.stop();
+      AnimationHelpers.ForceFinishTween(this.flipTween);
+      this.flipTween = null;
     }
-
     this.flipTween = this.scene.tweens.chain({
-      targets: this.cardParent,
+      targets: this.cardSprite,
+      onComplete: () => {
+        this.flipTween = null
+      },
       tweens: [
         {
           scaleX: 0,
-          duration: 3000,
+          duration: 100,
           ease: Phaser.Math.Easing.Linear,
           onComplete: () => {
             this.cardSprite.setTexture(
-              this.isFlipped ? "cardBack" : Card.GetTextureName(this.card)
+                toOrientation==Orientation.Down ? "cardBack" : Card.GetTextureName(this.card)
             );
-            // this.cardbackSprite.alpha = this.isFlipped ? 1 : 0;
-            // this.cardSprite.alpha = this.isFlipped ? 0 : 1;
           },
         },
         {
-          scaleX: 1,
-          duration: 3000,
-
+          scaleX: 3,
+          duration: 100,
           ease: Phaser.Math.Easing.Linear,
         },
       ],
@@ -94,8 +120,9 @@ class CardView extends Phaser.GameObjects.Container {
       y: this.targetPosition.y,
       angle: 0,
       duration: 400,
-      ease: Phaser.Math.Easing.Sine.InOut,
+      ease: Phaser.Math.Easing.Back.Out,
     });
+    // this.setPosition(this.targetPosition.x, this.targetPosition.y);
   }
   id() {
     return this.card.id();

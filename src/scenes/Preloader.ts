@@ -1,8 +1,9 @@
 import { Scene } from "phaser";
+import {SceneKeys} from "./SceneKeys.ts";
 
 export class Preloader extends Scene {
   constructor() {
-    super("Preloader");
+    super(SceneKeys.Preloader);
   }
 
   init() {
@@ -28,6 +29,7 @@ export class Preloader extends Scene {
 
     this.load.image("logo", "logo.png");
     this.load.image("cardBack", `KIN's_Playing_Cards/Back_2.png`);
+    
     const suits = ["Diamonds", "Hearts", "Clubs", "Spades"];
     const ranks = Array.from(Array(8).keys())
       .map((i) => (i + 2).toString())
@@ -42,6 +44,8 @@ export class Preloader extends Scene {
     this.load.image("marioCardback", "cardbacks/dance-and-dash-flyer.jpg");
 
     this.load.image("tileBG", "tileBG.png");
+    //end of game
+    this.load.image("tanBackground", 'kenney_pixel-ui-pack/9-Slice/Ancient/tan.png')
   }
 
   create() {
@@ -49,6 +53,6 @@ export class Preloader extends Scene {
     //  For example, you can define global animations here, so we can use them in other scenes.
 
     //  Move to the MainMenu. You could also swap this for a Scene Transition, such as a camera fade.
-    this.scene.start("Game");
+    this.scene.start(SceneKeys.Game);
   }
 }
