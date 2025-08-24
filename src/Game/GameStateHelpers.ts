@@ -56,6 +56,31 @@ class GameStateHelpers{
 
         return gameChange;
     }
+    
+    public static CreateMultipleOptionsState(currentState:GameState){
+        const playerTurn = 0;
+        const gameChange = new GameChange(playerTurn,currentState.GetPlayerTurn(),playerTurn);
+        gameChange.Append(currentState.MoveAllCardsToDeck());
+        const kingClubs = currentState.GetCardFromId(new Card(Suit.CLUB, 10).id())!;
+        const kingCoins = currentState.GetCardFromId(new Card(Suit.COIN, 10).id())!;
+        const playerHand = currentState.playerHands.get(0)!;
+        gameChange.AddMove(playerHand.PushTop(currentState.deck.TakeCard(kingClubs)!));
+        gameChange.AddMove(playerHand.PushTop(currentState.deck.TakeCard(kingCoins)!));
+        gameChange.AddFlip(kingClubs.flipFaceUp());
+        gameChange.AddFlip(kingCoins.flipFaceUp());
+
+        const cardsToMoveToTable = [
+            currentState.GetCardFromId(new Card(Suit.CLUB, 9).id())!,
+            currentState.GetCardFromId(new Card(Suit.COIN, 1).id())!,
+            currentState.GetCardFromId(new Card(Suit.CUP, 9).id())!,
+            currentState.GetCardFromId(new Card(Suit.SWORD, 1).id())!
+        ]
+
+        gameChange.AddMoves(cardsToMoveToTable.map(card=> currentState.table.PushTop(currentState.deck.TakeCard(card)!)));
+        gameChange.AddFlips(cardsToMoveToTable.map(card=>card.flipFaceUp()));
+        gameChange.Append(currentState.DealCards());
+        return gameChange;
+    }
 }
 
 export default GameStateHelpers;

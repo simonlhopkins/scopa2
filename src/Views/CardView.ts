@@ -42,7 +42,6 @@ class CardView extends Phaser.GameObjects.Container {
     return new Phaser.Math.Vector2(this.x, this.y);
   }
   public ToggleUp(){
-    console.log("toggling up", this.card.id()); 
     if(this.isToggled) return;
     if(this.toggleTween){
       AnimationHelpers.ForceFinishTween(this.toggleTween);

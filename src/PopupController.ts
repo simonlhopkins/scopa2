@@ -12,6 +12,7 @@ class PopupController{
     
     public ShowScoopChoicePopup(scoopResults:ScoopResult[], onSelect: (chosenScoop:ScoopResult)=>void, onCancel: ()=>void): void {
         
+        
         const container = this.scene.add.container(this.scene.scale.width/2, this.scene.scale.height/2);
         const background = this.scene.add.nineslice(0,0, "tanBackground", 0, 400, 400, 10, 10, 10, 10)
         background.setOrigin(0.5, 0.5);

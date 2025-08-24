@@ -69,6 +69,9 @@ class InputController{
         this.scene.input.keyboard!.on("keydown-TWO", () => {
             this.handler.OnDebugCommand("scoopableState");
         });
+        this.scene.input.keyboard!.on("keydown-THREE", () => {
+            this.handler.OnDebugCommand("multipleOptions");
+        });
         this.scene.input.on(
             Phaser.Input.Events.POINTER_OVER,
             (

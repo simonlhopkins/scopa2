@@ -448,6 +448,20 @@ class AnimationController {
   
   
   private AnimateCardFlips(cardFlips: CardFlip[]){
+    // const flipMap = new Map<CardId, CardFlip[]>();
+    // for(const flip of cardFlips) {
+    //   if(!flipMap.has(flip.card.id())) {
+    //     flipMap.set(flip.card.id(), []);
+    //   }
+    //   flipMap.get(flip.card.id())!.push(flip);
+    // }
+    //
+    // Array.from(flipMap).map(entry=>{
+    //   const flipArr = entry[1];
+    //   //flip should be first entry from pos to last to pos
+    //   return new CardFlip()
+    // })
+    
     cardFlips.forEach((flip => {
       const cardView = this.cardViewMap.get(flip.card.id())!;
       if(flip.fromOrientation != flip.toOrientation) {
