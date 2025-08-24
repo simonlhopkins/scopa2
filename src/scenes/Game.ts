@@ -19,11 +19,10 @@ import EndGameCardZoneView from "../Views/EndGameCardZoneView.ts";
 import PopupController from "../PopupController.ts";
 import GameObject = Phaser.GameObjects.GameObject;
 import Util from "../Util.ts";
+import UIScene from "./UI/UIScene.ts";
 
 export class Game extends Scene implements IInputEventHandler {
   camera: Phaser.Cameras.Scene2D.Camera;
-  background: Phaser.GameObjects.Image;
-  msg_text: Phaser.GameObjects.Text;
   gameState: GameState = new GameState();
 
   cardViewMap: Map<CardId, CardView> = new Map();
@@ -40,6 +39,8 @@ export class Game extends Scene implements IInputEventHandler {
   inputController: InputController;
   popupController: PopupController;
   history: GameChange[] = [];
+  
+  uiScene: UIScene;
   
   //I should move these out into something else maybe
   newGameDealTimeline: null | Phaser.Time.Timeline = null;
@@ -59,9 +60,12 @@ export class Game extends Scene implements IInputEventHandler {
         this.animationController
     );
     this.popupController = new PopupController(this);
+    
   }
 
   create() {
+    this.uiScene = this.scene.launch(SceneKeys.UI) as UIScene;
+    console.log(this.uiScene)
     const bg = this.add.tileSprite(0, 0, 2500, 2500, "tileBG");
     this.add.tween({
       targets: bg,
@@ -138,7 +142,8 @@ export class Game extends Scene implements IInputEventHandler {
       if (this.gameState.IsGameOver()) {
         console.log(this.gameState)
         // this.ApplyChange(gameChange);
-        this.scene.launch(SceneKeys.EndOfGame, this.gameState)
+        console.log(this.uiScene)
+        this.uiScene.ShowEndOfGameView(this.gameState);
 
       }
     } else {
@@ -417,6 +422,9 @@ export class Game extends Scene implements IInputEventHandler {
     return  this.cardViewMap.get(cardId)!;
   }
   OnDebugCommand(command:string){
+    if(this.newGameDealTimeline){
+      this.newGameDealTimeline.stop();
+    }
     switch (command){
         case "dealNewGame":
             this.DealNewGame();
@@ -430,6 +438,9 @@ export class Game extends Scene implements IInputEventHandler {
         case "preEndGame":
             this.ApplyChange(GameStateHelpers.PreEndGameState(this.gameState));
             break;
+        case "multipleOptions":
+          this.ApplyChange(GameStateHelpers.CreateMultipleOptionsState(this.gameState));
+          break;
         default:
             console.warn(`unknown debug command ${command}`);
             break;
