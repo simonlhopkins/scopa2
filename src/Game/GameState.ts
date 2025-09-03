@@ -1,12 +1,8 @@
-import serializeJavascript from "serialize-javascript";
 import Card, { CardId, Suit } from "./Card";
 import CardZone, { CardZoneID, ZonePosition } from "./CardZone";
 import GameChange from "./GameChange";
 import Util from "../Util";
 import CardMove from "./CardMove.ts";
-import CardFlip, {CardFlipAnimationContext} from "./CardFlip.ts";
-import AnimationContext from "../Animation/AnimationContext.ts";
-import cardMove from "./CardMove.ts";
 
 export class ScoopResult {
   handCard: Card;
@@ -25,7 +21,7 @@ class GameState {
   table: CardZone = new CardZone(new ZonePosition(CardZoneID.TABLE, 0), []);
   playerHands: Map<number, CardZone> = new Map();
   playerPiles: Map<number, CardZone> = new Map();
-  endGameZones: Map<number, CardZone> = new Map();
+  // endGameZones: Map<number, CardZone> = new Map();
   private playerTurn: number = 0;
   numPlayers = 4;
   constructor() {
@@ -46,10 +42,10 @@ class GameState {
         i,
         new CardZone(new ZonePosition(CardZoneID.PILE, i), [])
       );
-      this.endGameZones.set(
-          i,
-          new CardZone(new ZonePosition(CardZoneID.END_GAME, i), [])
-      );
+      // this.endGameZones.set(
+      //     i,
+      //     new CardZone(new ZonePosition(CardZoneID.END_GAME, i), [])
+      // );
     }
   }
   ResetPlayerTurn() {
@@ -79,26 +75,7 @@ class GameState {
     );
   }
   
-  MoveCardsToEndGameState(): GameChange {
-    const gameChange = new GameChange(
-      this.playerTurn,
-      this.playerTurn,
-      this.playerTurn
-    );
-    
-    for(const [index, pile] of this.playerPiles){
-        for(const card of pile.GetCards()){
-            //todo: maybe organize by suit here
-            const move = this.endGameZones.get(index)!.PushTop(pile.TakeCard(card)!);
-            const flip = move.card.flipFaceUp();
-            gameChange.AddMove(move)
-            flip.animationContext.flipAtEnd = true;
-            gameChange.AddFlip(flip);
-        }
-    }
-    
-    return gameChange;
-  }
+  
   //todo: do some validation, and if it fails then set a new game
   loadFromJson(gameStateJson: GameStateJson): GameChange {
     this.playerTurn = gameStateJson.playerTurn;
@@ -135,26 +112,15 @@ class GameState {
         new ZonePosition(CardZoneID.TABLE, 0)
       )!.PushTop(this.deck.TakeCard(this.GetCardFromId(card)!)!)
     );
-
-    for (const { id, cards } of gameStateJson.endGameZones) {
-      const cardMoves = cards.map((card) =>
-          this.GetCardZoneFromPosition(
-              new ZonePosition(CardZoneID.END_GAME, id)
-          )!.PushTop(this.deck.TakeCard(this.GetCardFromId(card)!)!)
-      );
-      const flips = cardMoves.map((move) => move.card.flipFaceUp());
-      initChange.AddFlips(flips);
-      initChange.AddMoves(cardMoves);
-    }
+    
     
     for (const cardId of [...gameStateJson.deck].reverse()) {
       this.deck.BringToTop(cardId);
     }
     initChange.AddMoves(deckToTableMoves);
     initChange.AddFlips(deckToTableMoves.map(move=>move.card.flipFaceUp()))
-    const instant = gameStateJson.endGameZones.every(zone=>zone.cards.length ==0);
     initChange.GetMoves().forEach(item=>{
-      item.animationContext.instant = instant;
+      item.animationContext.instant = true;
     });
     return initChange;
   }
@@ -238,10 +204,6 @@ class GameState {
       id,
       cards: cardZone.GetCards().map((card) => card.id()),
     }));
-    const endGameZones = [...this.endGameZones].map(([id, cardZone]) => ({
-      id,
-      cards: cardZone.GetCards().map((card) => card.id()),
-    }));
 
     const table = this.table.GetCards().map((card) => card.id());
     const deck = this.deck.GetCards().map((card) => card.id());
@@ -250,7 +212,6 @@ class GameState {
       piles,
       table,
       deck,
-      endGameZones,
       playerTurn: this.playerTurn,
     };
   }
@@ -258,7 +219,6 @@ class GameState {
     return [this.deck, this.table]
         .concat(Array.from(this.playerHands.values()))
         .concat(Array.from(this.playerPiles.values()))
-        .concat(Array.from(this.endGameZones.values()));
   }
   public GetCardFromSuitRank(suit: Suit, rank: number) {
     return this.GetCardFromId(new Card(suit, rank).id());
@@ -609,10 +569,6 @@ interface GameStateJson {
     cards: CardId[];
   }[];
   piles: {
-    id: number;
-    cards: CardId[];
-  }[];
-  endGameZones: {
     id: number;
     cards: CardId[];
   }[];

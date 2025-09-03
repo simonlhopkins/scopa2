@@ -1,28 +1,23 @@
-import { useEffect, useState } from "react";
 import styled from "styled-components";
-import { EventBus } from "../EventBus";
-import GameState from "../Game/GameState";
+import {EndOfGameData} from "../Store/store.ts";
+import Scrim from "./Scrim.tsx";
 
-export default function EndOfGameScreen() {
-  const [enabled, setEnabled] = useState(false);
-  useEffect(() => {
-    const endOfGameHandler = (data: GameState) => {
-      setEnabled(true);
-    };
-    EventBus.on("endGame", endOfGameHandler);
-    const newGameHandler = (data: GameState) => {
-      setEnabled(false);
-    };
-    EventBus.on("newGame", newGameHandler);
-    return () => {
-      EventBus.off("endGame", endOfGameHandler);
-      EventBus.off("newGame", newGameHandler);
-    };
-  }, []);
+
+interface Props {
+  endOfGameData: EndOfGameData
+}
+export default function EndOfGameScreen({endOfGameData}: Props) {
+  console.log(endOfGameData)
   return (
-    <StyledWrapper style={{ display: enabled ? "block" : "none" }}>
-      <h1>end of game</h1>
-    </StyledWrapper>
+    <Scrim>
+      <StyledWrapper>
+        <h1>end of game</h1>
+        <button onClick={()=>{
+          endOfGameData.onClose();
+        }}>new game</button>
+        <pre>{JSON.stringify(endOfGameData.gamestate.toJson(), null, 2)}</pre>
+      </StyledWrapper>
+    </Scrim>
   );
 }
 

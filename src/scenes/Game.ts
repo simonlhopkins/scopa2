@@ -19,8 +19,7 @@ import EndGameCardZoneView from "../Views/EndGameCardZoneView.ts";
 import PopupController from "../PopupController.ts";
 import GameObject = Phaser.GameObjects.GameObject;
 import Util from "../Util.ts";
-import UIScene from "./UI/UIScene.ts";
-import { EventBus } from "../EventBus.ts";
+import {useGameStore} from "../Store/store.ts";
 
 export class Game extends Scene implements IInputEventHandler {
   camera: Phaser.Cameras.Scene2D.Camera;
@@ -94,10 +93,8 @@ export class Game extends Scene implements IInputEventHandler {
       const newPileView = this.add.existing(new PileView(this));
       this.handViews.set(cardZone.zonePosition.index, newHandView);
       this.pileViews.set(cardZone.zonePosition.index, newPileView);
-      const radian = (handIndex / this.gameState.numPlayers) * Math.PI * 2;
-      const xOff = Math.cos(radian) * 350;
-      const yOff = Math.sin(radian) * 270;
-      newHandView.setPosition(512 + xOff, 384 + yOff);
+      const handPos = this.GetHandPosition(handIndex, this.gameState);
+      newHandView.setPosition(handPos.x, handPos.y);
       const pilePos = this.GetPilePosition(handIndex, this.gameState);
       newPileView.setPosition(pilePos.x, pilePos.y);
 
@@ -177,7 +174,12 @@ export class Game extends Scene implements IInputEventHandler {
   }
 
   OnGameOver() {
-    EventBus.emit("endGame", this.gameState);
+    useGameStore.getState().setEndOfGameData({
+      gamestate: this.gameState,
+      onClose: () => {
+        this.DealNewGame()
+      }
+    });
   }
 
   ApplyChange(gameChange: GameChange | null) {
@@ -266,12 +268,12 @@ export class Game extends Scene implements IInputEventHandler {
   }
 
   DealNewGame() {
+    useGameStore.getState().reset();
     this.ClearHistory();
     //I need to break this out into a gamestate function so I can also modify the player turn in it!!!, right now I just modify it inside of dealchange since so far that is true
     if (this.newGameDealTimeline) {
       this.newGameDealTimeline.stop();
     }
-    EventBus.emit("newGame");
     const playerAtEndOfLastGame = this.gameState.GetPlayerTurn();
     const moveToDeckChange = this.gameState.MoveAllCardsToDeck();
 
@@ -313,29 +315,30 @@ export class Game extends Scene implements IInputEventHandler {
     cardId: CardId,
     maybePreferredScoopResult: ScoopResult | null = null
   ): GameChange | null {
+
+    //🤮🤮🤮
     const scoopResults = this.gameState.GetPossibleScoops([
       this.gameState.GetCardFromId(cardId)!,
     ]);
-    //🤮🤮🤮
     if (
-      scoopResults.length > 1 &&
-      !maybePreferredScoopResult &&
-      this.gameState.GetPlayerTurn() == 0
+        scoopResults.length > 1 &&
+        !maybePreferredScoopResult &&
+        this.gameState.GetPlayerTurn() == 0 &&
+        this.gameState.GetCardFromId(cardId)?.currentZone.id == CardZoneID.HAND
     ) {
-      // this.popupController.ShowScoopChoicePopup(
-      //   scoopResults,
-      //   (chosenScoop) => {
-      //     this.AttemptMoveCardToTable(cardId, chosenScoop);
-      //   },
-      //   () => {}
-      // );
-
-      EventBus.emit("multipleScoops", {
-        scoopResults,
-        onChosen: (chosenScoop: ScoopResult) => {
-          this.AttemptMoveCardToTable(cardId, chosenScoop);
+      this.input.enabled=false;
+      useGameStore.getState().setScoopPromptData({
+        scoopResults: scoopResults,
+        onChoose: (chosenScoop)=>{
+          this.input.enabled=true;
+          this.AttemptMoveCardToTable(cardId, chosenScoop)
         },
+        onClose: ()=>{
+          this.input.enabled=true;
+          console.log("closed scoop choice");
+        }
       });
+
       return null;
     }
     this.gameLayer.add(this.cardViewMap.get(cardId)!);
@@ -347,6 +350,7 @@ export class Game extends Scene implements IInputEventHandler {
     );
 
     if (gameChange) {
+      
       this.AddToHistory(gameChange);
       this.ApplyChange(gameChange);
       //end game anim
@@ -382,6 +386,8 @@ export class Game extends Scene implements IInputEventHandler {
               },
             })
             .play();
+        }else{
+          this.OnGameOver()
         }
       }
     }
@@ -663,10 +669,22 @@ export class Game extends Scene implements IInputEventHandler {
     }
   }
   GetPilePosition(index: number, gameState: GameState) {
-    const assocHand = this.handViews.get(index);
-    if (gameState.numPlayers == 4 && (index == 1 || index == 3)) {
-      return assocHand!.GetPosition().add(new Phaser.Math.Vector2(-150, 0));
+    if(index==0) {
+      return this.GetHandPosition(index, gameState).add(new Phaser.Math.Vector2(300, 0));
     }
-    return assocHand!.GetPosition().add(new Phaser.Math.Vector2(0, 170));
+    else{
+      const handPos = this.GetHandPosition(index, gameState);
+      return handPos.add(new Phaser.Math.Vector2(0, -200));
+    }
+  }
+
+  GetHandPosition(index: number, gameState: GameState) {
+    if(index==0){
+      return new Phaser.Math.Vector2(this.scale.width/2, this.scale.height - 120);
+    }else{
+      const offset = Util.mapRange(index, 1, 3, -300, 300);
+      return new Phaser.Math.Vector2(this.scale.width/2 + offset, 100);
+      // return new Phaser.Math.Vector2(512 + xOff, 384 + yOff);
+    }
   }
 }

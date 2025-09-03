@@ -359,6 +359,7 @@ class AnimationController {
     for (const [player, scoopMoves] of scoopMap) {
       //move each of the cards to the index based on their capture arr, then move into the pile.
       this.DoScoopMoveAnimation(scoopMoves);
+      
     }
 
     //moves that go from the deck to the hands (dealing them out)
@@ -547,14 +548,7 @@ class AnimationController {
     this.onMoveTweensCompleteCallbacks.forEach((callback) => callback());
     this.onMoveTweensCompleteCallbacks = [];
   }
-
-  AnimateHoverOnEndGame(endGameZone: CardZone) {
-    endGameZone.GetCards().forEach((card) => {
-      if (card.suit == Suit.COIN) {
-        this.cardViewMap.get(card.id())!.ToggleUp();
-      }
-    });
-  }
+  
   AnimateTableScoopsForCard(cardId: CardId, gameState: GameState) {
     const card = gameState.GetCardFromId(cardId);
     if (card && card.currentZone.id == CardZoneID.HAND) {

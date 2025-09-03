@@ -1,37 +1,52 @@
-import { useEffect, useRef, useState } from "react";
-import { ScoopResult } from "../Game/GameState";
+
 import styled from "styled-components";
-import { EventBus } from "../EventBus";
+import {ScoopPromptData} from "../Store/store.ts";
+import Card from "../Game/Card.ts";
+import Scrim from "./Scrim.tsx";
 
-export default function MultipleScoops() {
-  const [scoopResults, setScoopResults] = useState<ScoopResult[]>([]);
-  // const onChosenCallback = useRef()
-  // EventBus.emit("multipleScoops", {
-  //   scoopResults,
-  //   onChosen: (chosenScoop: ScoopResult) => {
-  //     this.AttemptMoveCardToTable(cardId, chosenScoop);
-  //   },
-  // });
-  useEffect(() => {
-    const scoopOptionHandler = ({ scoopResults, onChosen }: any) => {
-      setScoopResults(scoopResults as ScoopResult[]);
-    };
-    EventBus.on("multipleScoops", scoopOptionHandler);
 
-    return () => {
-      EventBus.off("multipleScoops", scoopOptionHandler);
-    };
-  }, []);
-  return (
-    <StyledWrapper
-      style={{ display: scoopResults.length == 0 ? "none" : "block" }}
-    ></StyledWrapper>
-  );
+
+interface Props {
+  scoopPromptData: ScoopPromptData
+}
+export default function MultipleScoops({scoopPromptData}: Props) {
+  
+  
+    return (
+        <Scrim>
+          <StyledPopup>
+            <h1>Multiple Scoops</h1>
+            <button onClick={() => {
+              scoopPromptData.onClose();
+            }}>close
+            </button>
+            <ul>
+              {scoopPromptData.scoopResults.map((scoopResult, index) =>
+                  <li key={index}>
+                    {scoopResult.tableCards.map(card => 
+                        <img key = {card.id()} src={"/assets/KIN's_Playing_Cards/" + Card.GetTextureName(card)+ ".png"}></img>
+                    )}
+                    
+                    <button onClick={() => {
+                      scoopPromptData.onChoose(scoopResult);
+                    }}>choose
+                    </button>
+                  </li>)}
+            </ul>
+          </StyledPopup>
+        </Scrim>)
 }
 
-const StyledWrapper = styled.div`
-  width: 300px;
-  height: 300px;
-  background-color: lightblue;
-  border-radius: 20px;
+const StyledPopup = styled.div`
+    pointer-events: all;
+    width: 300px;
+    background-color: lightblue;
+    border-radius: 20px;
+    li{
+        img{
+            image-rendering: pixelated;
+        }
+    }
+    
 `;
+

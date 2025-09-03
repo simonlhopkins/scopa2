@@ -79,6 +79,9 @@ class GameStateHelpers{
         gameChange.AddMoves(cardsToMoveToTable.map(card=> currentState.table.PushTop(currentState.deck.TakeCard(card)!)));
         gameChange.AddFlips(cardsToMoveToTable.map(card=>card.flipFaceUp()));
         gameChange.Append(currentState.DealCards());
+        gameChange.GetFlips().forEach(flip=>{
+            flip.animationContext.flipAtEnd = true;
+        });
         return gameChange;
     }
 }

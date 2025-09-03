@@ -1,4 +1,4 @@
-import Card from "./Game/Card";
+import Card, {Suit} from "./Game/Card";
 
 export default class Util {
   static cantorPair(x: number, y: number) {
@@ -6,6 +6,19 @@ export default class Util {
   }
   static wait(milliseconds: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, milliseconds));
+  }
+  static mapRange(
+      value: number,
+      inMin: number,
+      inMax: number,
+      outMin: number,
+      outMax: number
+  ): number {
+    if (inMin === inMax) {
+      throw new Error("Input range cannot be zero (inMin === inMax).");
+    }
+
+    return ((value - inMin) * (outMax - outMin)) / (inMax - inMin) + outMin;
   }
 
   //stolen from chat
@@ -32,6 +45,7 @@ export default class Util {
   static CardArrToString(arr: Card[]) {
     return `${arr.length} cards: ` + arr.map((c) => c.toString()).join(", ");
   }
+  
   static async WaitUntilTweensFinish(tweens: Phaser.Tweens.BaseTween[]) {
     const tweenPromises = tweens.map(
       (tween) =>
